@@ -18,7 +18,8 @@ export function MobileNav({ role }: { role: UserRole }) {
           <Menu className="h-5 w-5" aria-hidden />
         </Button>
       </DialogTrigger>
-      <DialogContent className="top-4 max-w-sm translate-y-0 sm:top-1/2 sm:-translate-y-1/2">
+      {/* Encostado no topo no celular, centralizado a partir de sm. */}
+      <DialogContent className="max-w-sm self-start sm:self-center">
         <DialogTitle className="mb-4">Menu</DialogTitle>
         <NavLinks role={role} onNavigate={() => setAberto(false)} />
       </DialogContent>

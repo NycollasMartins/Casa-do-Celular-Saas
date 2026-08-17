@@ -15,20 +15,32 @@ const DialogContent = React.forwardRef<
 >(({ className, children, ...props }, ref) => (
   <DialogPrimitive.Portal>
     <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-[2px] data-[state=open]:animate-fade-in" />
-    <DialogPrimitive.Content
-      ref={ref}
-      className={cn(
-        'fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-lg border border-slate-200 bg-white p-6 shadow-card-hover data-[state=open]:animate-fade-in',
-        className
-      )}
-      {...props}
-    >
-      {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-ink focus:outline-none focus:ring-2 focus:ring-brand">
-        <X className="h-4 w-4" />
-        <span className="sr-only">Fechar</span>
-      </DialogPrimitive.Close>
-    </DialogPrimitive.Content>
+    {/*
+      A centralizacao e feita por flexbox, NAO por `-translate-x/y-1/2`.
+      A animacao `fade-in` termina em `transform: none` com fill-mode `both`
+      (tailwind.config.ts) e, como animacao vence declaracao normal, ela
+      anularia o translate de forma permanente — o modal escorregaria para
+      fora da tela. O wrapper rola sozinho quando o conteudo passa da
+      altura da janela, entao formularios longos nunca ficam cortados.
+    */}
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="flex min-h-full items-center justify-center p-4 sm:p-6">
+        <DialogPrimitive.Content
+          ref={ref}
+          className={cn(
+            'relative w-full max-w-lg rounded-lg border border-slate-200 bg-white p-6 shadow-card-hover data-[state=open]:animate-fade-in',
+            className
+          )}
+          {...props}
+        >
+          {children}
+          <DialogPrimitive.Close className="absolute right-4 top-4 rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-ink focus:outline-none focus:ring-2 focus:ring-brand">
+            <X className="h-4 w-4" />
+            <span className="sr-only">Fechar</span>
+          </DialogPrimitive.Close>
+        </DialogPrimitive.Content>
+      </div>
+    </div>
   </DialogPrimitive.Portal>
 ));
 DialogContent.displayName = DialogPrimitive.Content.displayName;
