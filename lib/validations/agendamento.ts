@@ -76,3 +76,19 @@ export const filtroMetricasSchema = z.object({
   dataInicio: z.string().optional(),
   dataFim: z.string().optional(),
 });
+
+/**
+ * Registro de venda. `valor` chega como string do formulario e ja passou
+ * por lerValorBrl no cliente; aqui o coerce cobre o caminho direto (API,
+ * teste) sem depender dessa etapa.
+ */
+export const vendaSchema = z.object({
+  valor: z.coerce
+    .number({ invalid_type_error: 'Informe o valor da venda' })
+    .positive('O valor precisa ser maior que zero')
+    .max(9_999_999_999.99, 'Valor acima do limite'),
+  descricao: z.string().trim().max(300, 'Maximo de 300 caracteres').optional().or(z.literal('')),
+  data_venda: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data invalida'),
+});
+
+export type VendaInput = z.infer<typeof vendaSchema>;

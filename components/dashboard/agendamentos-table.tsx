@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
-import { ArrowDown, ArrowUp, ArrowUpDown, Download, Pencil, Search, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, Pencil, Search, Trash2, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,7 +27,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { StatusFilter } from './status-filter';
 import { deletarAgendamento } from '@/app/actions/agendamentos';
 import { STATUS_LABEL, cn, formatarDataIso } from '@/lib/utils';
-import type { AgendamentoComRelacoes, AgendamentoStatus, UserRole } from '@/lib/types/database';
+import type { AgendamentoComRelacoes, AgendamentoStatus, UserRole, Venda } from '@/lib/types/database';
+import { VendaForm } from '@/components/forms/venda-form';
+import { formatarBrl } from '@/lib/dinheiro';
 
 const ITENS_POR_PAGINA = 50;
 const TODOS = 'todos';
@@ -49,9 +51,18 @@ interface Props {
   agendadores: { id: string; nome: string }[];
   /** Vem do clique nos cards de metrica. */
   statusInicial?: AgendamentoStatus[];
+  /** Vendas ja registradas, por agendamento. Vazio quando ninguem lancou. */
+  vendas?: Record<string, Pick<Venda, 'id' | 'valor' | 'descricao' | 'data_venda'>>;
 }
 
-export function AgendamentosTable({ agendamentos, role, lojas, agendadores, statusInicial = [] }: Props) {
+export function AgendamentosTable({
+  agendamentos,
+  role,
+  lojas,
+  agendadores,
+  statusInicial = [],
+  vendas = {},
+}: Props) {
   const [busca, setBusca] = useState('');
   const [lojaId, setLojaId] = useState<string>(TODOS);
   const [agendadorId, setAgendadorId] = useState<string>(TODOS);
@@ -62,6 +73,7 @@ export function AgendamentosTable({ agendamentos, role, lojas, agendadores, stat
   });
   const [pagina, setPagina] = useState(1);
   const [paraExcluir, setParaExcluir] = useState<AgendamentoComRelacoes | null>(null);
+  const [vendaDe, setVendaDe] = useState<AgendamentoComRelacoes | null>(null);
   const [excluindo, iniciarExclusao] = useTransition();
 
   const podeExcluir = role !== 'agendador';
@@ -301,6 +313,26 @@ export function AgendamentosTable({ agendamentos, role, lojas, agendadores, stat
                 <TableCell className="whitespace-nowrap text-slate-600">{item.agendador?.nome ?? '-'}</TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-1">
+                    {/* Venda so existe onde houve comparecimento — o mesmo
+                        que o trigger do banco exige. */}
+                    {item.status === 'compareceu' ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={
+                          vendas[item.id]
+                            ? `Editar venda de ${item.cliente_nome}`
+                            : `Registrar venda de ${item.cliente_nome}`
+                        }
+                        title={vendas[item.id] ? formatarBrl(vendas[item.id].valor) : 'Registrar venda'}
+                        onClick={() => setVendaDe(item)}
+                      >
+                        <Wallet
+                          className={cn('h-4 w-4', vendas[item.id] ? 'text-teal-600' : 'text-slate-400')}
+                          aria-hidden
+                        />
+                      </Button>
+                    ) : null}
                     <Button asChild variant="ghost" size="icon" aria-label={`Editar ${item.cliente_nome}`}>
                       <Link href={`/dashboard/agendamentos/${item.id}`}>
                         <Pencil className="h-4 w-4" aria-hidden />
@@ -374,6 +406,26 @@ export function AgendamentosTable({ agendamentos, role, lojas, agendadores, stat
               Excluir
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(vendaDe)} onOpenChange={(aberto) => !aberto && setVendaDe(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {vendaDe && vendas[vendaDe.id] ? 'Editar venda' : 'Registrar venda'}
+            </DialogTitle>
+            <DialogDescription>
+              Atendimento de {vendaDe?.cliente_nome} na {vendaDe?.loja?.nome ?? 'loja'}.
+            </DialogDescription>
+          </DialogHeader>
+          {vendaDe ? (
+            <VendaForm
+              agendamentoId={vendaDe.id}
+              venda={vendas[vendaDe.id]}
+              onSalvo={() => setVendaDe(null)}
+            />
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>

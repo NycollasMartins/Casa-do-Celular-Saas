@@ -36,6 +36,11 @@ export interface ResumoMetricas {
   totalCompareceram: number;
   taxaConversao: number;
   taxaComparecimento: number;
+  /** Fecha o funil: de quem compareceu, quantos compraram e quanto. */
+  totalVendas: number;
+  receita: number;
+  ticketMedio: number;
+  taxaFechamento: number;
   dadosDiarios: PontoDiario[];
   dadosPorAgendador: DesempenhoAgendador[];
   distribuicaoStatus: FatiaStatus[];

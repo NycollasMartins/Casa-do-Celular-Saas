@@ -8,6 +8,7 @@ import { exigirRole } from '@/lib/auth/session';
 import { buscarLojasDoUsuario, calcularMetricas, calcularMetricasPorLoja } from '@/lib/supabase/queries';
 import { lerFiltros, type ParametrosBusca } from '@/lib/filtros';
 import { formatarNumero, formatarPercentual } from '@/lib/utils';
+import { formatarBrl } from '@/lib/dinheiro';
 
 export const metadata = { title: 'Relatorios · Casa do Celular' };
 
@@ -20,6 +21,11 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
     calcularMetricasPorLoja(filtros),
     calcularMetricas(filtros),
   ]);
+
+  // As colunas de faturamento so entram quando ha venda no periodo. Numa
+  // rede que ainda nao usa o registro, duas colunas zeradas atrapalham mais
+  // do que informam.
+  const mostrarFaturamento = metricas.totalVendas > 0;
 
   return (
     <div className="space-y-6">
@@ -54,13 +60,16 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
                 <TableHead>Contatos</TableHead>
                 <TableHead>Agendados</TableHead>
                 <TableHead>Compareceram</TableHead>
+                {mostrarFaturamento ? <TableHead>Vendas</TableHead> : null}
+                {mostrarFaturamento ? <TableHead>Faturamento</TableHead> : null}
+                {mostrarFaturamento ? <TableHead>Ticket medio</TableHead> : null}
                 <TableHead>Conversao</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {porLoja.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-sm text-slate-500">
+                  <TableCell colSpan={mostrarFaturamento ? 8 : 5} className="py-10 text-center text-sm text-slate-500">
                     Sem dados no periodo.
                   </TableCell>
                 </TableRow>
@@ -71,6 +80,19 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
                     <TableCell className="tabular-nums">{formatarNumero(linha.contatos)}</TableCell>
                     <TableCell className="tabular-nums">{formatarNumero(linha.agendados)}</TableCell>
                     <TableCell className="tabular-nums">{formatarNumero(linha.compareceram)}</TableCell>
+                    {mostrarFaturamento ? (
+                      <TableCell className="tabular-nums">{formatarNumero(linha.vendas)}</TableCell>
+                    ) : null}
+                    {mostrarFaturamento ? (
+                      <TableCell className="whitespace-nowrap tabular-nums font-medium">
+                        {formatarBrl(linha.receita)}
+                      </TableCell>
+                    ) : null}
+                    {mostrarFaturamento ? (
+                      <TableCell className="whitespace-nowrap tabular-nums text-slate-600">
+                        {formatarBrl(linha.ticketMedio)}
+                      </TableCell>
+                    ) : null}
                     <TableCell>
                       <Badge variant={linha.taxaConversao >= 50 ? 'success' : 'neutral'}>
                         {formatarPercentual(linha.taxaConversao)}

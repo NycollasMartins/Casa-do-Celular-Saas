@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { buscarUsuarioAtual, podeGerenciarCadastros } from '@/lib/auth/session';
-import { agendamentoSchema, novoAgendamentoSchema } from '@/lib/validations/agendamento';
+import { agendamentoSchema, novoAgendamentoSchema, vendaSchema } from '@/lib/validations/agendamento';
 import { calcularMetricas, buscarLojasDoUsuario } from '@/lib/supabase/queries';
 import type { FiltroMetricas } from '@/lib/types/metricas';
 import { camposAnonimizados, normalizarCpfParaBusca } from '@/lib/lgpd';
@@ -251,4 +251,111 @@ export async function contarRegistrosDoCpf(
     total: linhas.length,
     anonimizados: linhas.filter((linha) => linha.anonimizado_em !== null).length,
   };
+}
+
+/* ------------------------------- Vendas ------------------------------- */
+
+/**
+ * Registra a venda de um atendimento. Fecha o funil: ate aqui o sistema
+ * media quem apareceu, nao quem comprou.
+ *
+ * Escreve pelo cliente normal para o RLS conferir o escopo, e `registrada_por`
+ * vai como auth.uid() porque a policy de insert exige que sejam iguais — o
+ * lancamento financeiro fica com autoria de quem realmente lancou.
+ */
+export async function registrarVenda(
+  agendamentoId: string,
+  formData: FormData
+): Promise<ResultadoAction> {
+  const usuario = await buscarUsuarioAtual();
+  if (!usuario) return { sucesso: false, mensagem: 'Sessao expirada.' };
+
+  const parsed = vendaSchema.safeParse({
+    valor: formData.get('valor'),
+    descricao: formData.get('descricao') ?? '',
+    data_venda: formData.get('data_venda'),
+  });
+
+  if (!parsed.success) {
+    return { sucesso: false, mensagem: 'Revise os campos.', erros: parsed.error.flatten().fieldErrors };
+  }
+
+  const supabase = createClient();
+  const { error } = await supabase.from('vendas').insert({
+    agendamento_id: agendamentoId,
+    valor: parsed.data.valor,
+    descricao: parsed.data.descricao || null,
+    data_venda: parsed.data.data_venda,
+    registrada_por: usuario.id,
+  });
+
+  if (error) {
+    // 23505: ja existe venda para este atendimento (unique agendamento_id).
+    if (error.code === '23505') {
+      return { sucesso: false, mensagem: 'Este atendimento ja tem venda registrada.' };
+    }
+    // 23514: o trigger barrou porque o agendamento nao esta como compareceu.
+    if (error.code === '23514') {
+      return {
+        sucesso: false,
+        mensagem: 'Marque o comparecimento antes de registrar a venda.',
+      };
+    }
+    return { sucesso: false, mensagem: `Nao foi possivel registrar: ${error.message}` };
+  }
+
+  revalidatePath('/dashboard/agendamentos');
+  revalidatePath('/dashboard/relatorios');
+  revalidatePath('/dashboard');
+  return { sucesso: true, mensagem: 'Venda registrada.' };
+}
+
+export async function atualizarVenda(id: string, formData: FormData): Promise<ResultadoAction> {
+  const usuario = await buscarUsuarioAtual();
+  if (!usuario) return { sucesso: false, mensagem: 'Sessao expirada.' };
+
+  const parsed = vendaSchema.safeParse({
+    valor: formData.get('valor'),
+    descricao: formData.get('descricao') ?? '',
+    data_venda: formData.get('data_venda'),
+  });
+
+  if (!parsed.success) {
+    return { sucesso: false, mensagem: 'Revise os campos.', erros: parsed.error.flatten().fieldErrors };
+  }
+
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('vendas')
+    .update({
+      valor: parsed.data.valor,
+      descricao: parsed.data.descricao || null,
+      data_venda: parsed.data.data_venda,
+    })
+    .eq('id', id);
+
+  if (error) return { sucesso: false, mensagem: `Nao foi possivel salvar: ${error.message}` };
+
+  revalidatePath('/dashboard/agendamentos');
+  revalidatePath('/dashboard/relatorios');
+  revalidatePath('/dashboard');
+  return { sucesso: true, mensagem: 'Venda atualizada.' };
+}
+
+/** Apagar venda e gestor: e historico financeiro, nao rascunho. */
+export async function removerVenda(id: string): Promise<ResultadoAction> {
+  const usuario = await buscarUsuarioAtual();
+  if (!usuario) return { sucesso: false, mensagem: 'Sessao expirada.' };
+  if (usuario.role === 'agendador') {
+    return { sucesso: false, mensagem: 'Apenas gestores removem venda registrada.' };
+  }
+
+  const supabase = createClient();
+  const { error } = await supabase.from('vendas').delete().eq('id', id);
+  if (error) return { sucesso: false, mensagem: `Nao foi possivel remover: ${error.message}` };
+
+  revalidatePath('/dashboard/agendamentos');
+  revalidatePath('/dashboard/relatorios');
+  revalidatePath('/dashboard');
+  return { sucesso: true, mensagem: 'Venda removida.' };
 }

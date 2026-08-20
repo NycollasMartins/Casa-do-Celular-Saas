@@ -2,6 +2,7 @@ import { format, parseISO, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { createClient } from '@/lib/supabase/server';
 import { STATUS_LABEL } from '@/lib/utils';
+import { ticketMedio } from '@/lib/dinheiro';
 import type {
   Agendamento,
   AgendamentoComRelacoes,
@@ -192,6 +193,43 @@ function distribuirStatus(registros: Pick<Agendamento, 'status'>[]): FatiaStatus
 }
 
 /**
+ * Vendas dos agendamentos informados.
+ *
+ * Consulta separada de proposito: `buscarAgendamentos` ja e a leitura mais
+ * pesada do sistema, e a maioria dos atendimentos nao tem venda. Um join
+ * ali carregaria coluna nula na maior parte das linhas para alimentar
+ * quatro numeros.
+ *
+ * O RLS de `vendas` deriva do agendamento, entao o escopo ja vem correto.
+ */
+async function buscarVendasDosAgendamentos(
+  agendamentoIds: string[]
+): Promise<Map<string, number>> {
+  const porAgendamento = new Map<string, number>();
+  if (agendamentoIds.length === 0) return porAgendamento;
+
+  const supabase = createClient();
+
+  // O `in` vai para a query string; lotes evitam estourar o limite de URL.
+  const TAMANHO_LOTE = 200;
+  for (let i = 0; i < agendamentoIds.length; i += TAMANHO_LOTE) {
+    const lote = agendamentoIds.slice(i, i + TAMANHO_LOTE);
+    const { data, error } = await supabase
+      .from('vendas')
+      .select('agendamento_id, valor')
+      .in('agendamento_id', lote);
+
+    if (error) throw new Error(`Nao foi possivel carregar as vendas: ${error.message}`);
+
+    for (const venda of data ?? []) {
+      porAgendamento.set(venda.agendamento_id, Number(venda.valor));
+    }
+  }
+
+  return porAgendamento;
+}
+
+/**
  * Metricas do dashboard.
  * Uma unica leitura alimenta os 4 cards e os 4 graficos: o volume por
  * franqueado (dezenas de milhares de linhas/mes) cabe em memoria e evita
@@ -209,12 +247,24 @@ export async function calcularMetricas(filtros: FiltroMetricas = {}): Promise<Re
   const taxaConversao = totalContatos > 0 ? (totalAgendados / totalContatos) * 100 : 0;
   const taxaComparecimento = totalAgendados > 0 ? (totalCompareceram / totalAgendados) * 100 : 0;
 
+  const vendas = await buscarVendasDosAgendamentos(registros.map((r) => r.id));
+  const receita = Array.from(vendas.values()).reduce((soma, valor) => soma + valor, 0);
+  const totalVendas = vendas.size;
+
+  // Denominador e quem compareceu, nao quem foi contatado: fechamento mede
+  // o desempenho da loja no balcao, nao a captacao do agendador.
+  const taxaFechamento = totalCompareceram > 0 ? (totalVendas / totalCompareceram) * 100 : 0;
+
   return {
     totalContatos,
     totalAgendados,
     totalCompareceram,
     taxaConversao: Number(taxaConversao.toFixed(1)),
     taxaComparecimento: Number(taxaComparecimento.toFixed(1)),
+    totalVendas,
+    receita: Math.round(receita * 100) / 100,
+    ticketMedio: ticketMedio(receita, totalVendas),
+    taxaFechamento: Number(taxaFechamento.toFixed(1)),
     dadosDiarios: agruparPorDia(registros, inicio, fim),
     dadosPorAgendador: agruparPorAgendador(registros),
     distribuicaoStatus: distribuirStatus(registros),
@@ -224,9 +274,19 @@ export async function calcularMetricas(filtros: FiltroMetricas = {}): Promise<Re
 /** Metricas consolidadas por loja (usado em Relatorios e no super admin). */
 export async function calcularMetricasPorLoja(filtros: FiltroMetricas = {}) {
   const registros = await buscarAgendamentos({ ...filtros, limite: 10_000 });
+  const vendas = await buscarVendasDosAgendamentos(registros.map((r) => r.id));
+
   const mapa = new Map<
     string,
-    { lojaId: string; nome: string; contatos: number; agendados: number; compareceram: number }
+    {
+      lojaId: string;
+      nome: string;
+      contatos: number;
+      agendados: number;
+      compareceram: number;
+      vendas: number;
+      receita: number;
+    }
   >();
 
   for (const registro of registros) {
@@ -237,16 +297,27 @@ export async function calcularMetricasPorLoja(filtros: FiltroMetricas = {}) {
       contatos: 0,
       agendados: 0,
       compareceram: 0,
+      vendas: 0,
+      receita: 0,
     };
     atual.contatos++;
     if (STATUS_AGENDADOS.includes(registro.status)) atual.agendados++;
     if (registro.status === 'compareceu') atual.compareceram++;
+
+    const valor = vendas.get(registro.id);
+    if (valor !== undefined) {
+      atual.vendas++;
+      atual.receita += valor;
+    }
+
     mapa.set(id, atual);
   }
 
   return Array.from(mapa.values())
     .map((item) => ({
       ...item,
+      receita: Math.round(item.receita * 100) / 100,
+      ticketMedio: ticketMedio(item.receita, item.vendas),
       taxaConversao: item.contatos > 0 ? Number(((item.agendados / item.contatos) * 100).toFixed(1)) : 0,
     }))
     .sort((a, b) => b.contatos - a.contatos);

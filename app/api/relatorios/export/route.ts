@@ -14,6 +14,10 @@ const COLUNAS_LOJA: ColunaCsv<LinhaLoja>[] = [
   { cabecalho: 'Contatos', valor: (linha) => linha.contatos },
   { cabecalho: 'Agendados', valor: (linha) => linha.agendados },
   { cabecalho: 'Compareceram', valor: (linha) => linha.compareceram },
+  { cabecalho: 'Vendas', valor: (linha) => linha.vendas },
+  // Numero puro, sem "R$": planilha soma coluna de numero, nao de texto.
+  { cabecalho: 'Faturamento (R$)', valor: (linha) => linha.receita },
+  { cabecalho: 'Ticket medio (R$)', valor: (linha) => linha.ticketMedio },
   { cabecalho: 'Conversao (%)', valor: (linha) => linha.taxaConversao },
 ];
 

@@ -24,6 +24,7 @@ franqueados com 10 a 80 lojas cada, sem reescrita.
 - [Testes](#testes)
 - [LGPD](#lgpd)
 - [Lembrete de véspera](#lembrete-de-véspera)
+- [Registro de venda](#registro-de-venda)
 - [Deploy](#deploy)
 - [Decisões de projeto](#decisões-de-projeto)
 - [Roadmap](#roadmap)
@@ -119,7 +120,7 @@ Abra `http://localhost:3000`. Sem sessão, o middleware manda para
 
 ## Banco de dados
 
-A ordem importa. São oito passos:
+A ordem importa. São nove passos:
 
 **1. Schema** — no SQL Editor do Supabase, cole e execute
 `supabase/migrations/`.
@@ -168,6 +169,10 @@ permite atender ao pedido de eliminação do titular sem destruir a métrica.
 Cria a tabela que garante que o lembrete de véspera não seja enviado duas
 vezes, e a função que lista quem deve receber.
 
+**9. Vendas** — execute `supabase/migrations/20250101000007_vendas.sql`.
+Fecha o funil no faturamento. Inclui o trigger que impede registrar venda em
+atendimento sem comparecimento confirmado.
+
 ### Tabelas
 
 | Tabela | Papel |
@@ -178,6 +183,7 @@ vezes, e a função que lista quem deve receber.
 | `participacoes_societarias` | Define o que franqueado e diretor enxergam. `data_fim IS NULL` = ativa. |
 | `agendadores_lojas` | Vínculo do operacional com uma loja. |
 | `notificacoes` | Registro de lembrete enviado. Não guarda telefone nem e-mail. |
+| `vendas` | Fecha o funil. Uma por agendamento, só onde houve comparecimento. |
 | `agendamentos` | Tabela de fato. `franqueado_id` desnormalizado para filtrar por tenant sem join. |
 
 ---
@@ -413,6 +419,37 @@ seria tratar dado que o titular pediu para eliminar.
 
 ---
 
+## Registro de venda
+
+Até aqui o funil parava no comparecimento: o sistema media quantas pessoas
+apareceram, não quantas compraram. Sem isso, um agendador que traz muita
+gente que não compra parece melhor que um que traz pouca gente que compra.
+
+Na tabela de *Agendamentos*, os atendimentos com comparecimento ganham um
+botão de carteira para lançar o valor. O dashboard mostra faturamento,
+ticket médio e número de vendas; *Relatórios* traz as mesmas colunas por
+loja, e a exportação CSV acompanha.
+
+**Valor é `numeric(12,2)`, nunca float.** Em ponto flutuante `0.1 + 0.2` não
+dá `0.3`, e em dinheiro esse erro vira divergência de fechamento.
+
+**A regra "só onde houve comparecimento" está no banco**, num trigger, não
+só na aplicação. Confiar apenas na validação da tela deixaria a porta aberta
+para qualquer caminho que não passe por ela — script, correção manual, rota
+futura.
+
+**O parser de valor trata o formato brasileiro.** `1.234` em português é mil
+duzentos e trinta e quatro, não um vírgula duzentos e trinta e quatro. Um
+`replace(',', '.')` ingênuo erraria por mil vezes, em silêncio, num campo de
+dinheiro. `lerValorBrl` decide pelo número de dígitos após o ponto e tem 15
+testes cobrindo os casos ambíguos.
+
+Os indicadores de faturamento **só aparecem quando há venda registrada**:
+numa rede que ainda não usa o recurso, um `R$ 0,00` fixo no topo pareceria
+defeito em vez de ausência de dado.
+
+---
+
 ## Deploy
 
 **Supabase:** crie o projeto, rode as migrations na ordem acima e ative
@@ -509,5 +546,4 @@ Próximos passos naturais, na ordem em que costumam doer:
 4. ~~**Histórico de participação societária**~~ — feito. A tela *Societário*
    encerra e transfere participações preservando o histórico.
 5. **Exportação agendada** — relatório semanal por e-mail para o franqueado.
-6. **Registro de venda** — fechar o funil de contato até faturamento, hoje o
-   sistema para no comparecimento.
+6. ~~**Registro de venda**~~ — feito. O funil vai de contato a faturamento.

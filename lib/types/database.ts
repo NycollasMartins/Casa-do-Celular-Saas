@@ -90,6 +90,18 @@ export type Agendamento = {
   updated_at: string;
 }
 
+export type Venda = {
+  id: string;
+  agendamento_id: string;
+  /** numeric(12,2) chega como number pelo supabase-js. */
+  valor: number;
+  descricao: string | null;
+  data_venda: string;
+  registrada_por: string;
+  created_at: string;
+  updated_at: string;
+};
+
 /** Agendamento com os joins usados na tabela do dashboard. */
 export type AgendamentoComRelacoes = Agendamento & {
   loja: Pick<Loja, 'id' | 'nome' | 'codigo_loja'> | null;
@@ -112,6 +124,7 @@ export type Database = {
       participacoes_societarias: Tabela<ParticipacaoSocietaria>;
       agendadores_lojas: Tabela<AgendadorLoja>;
       agendamentos: Tabela<Agendamento>;
+      vendas: Tabela<Venda>;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

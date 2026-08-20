@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { CalendarCheck, PhoneCall, Target, UserCheck } from 'lucide-react';
+import { CalendarCheck, PhoneCall, Target, UserCheck, Wallet } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { cn, formatarNumero, formatarPercentual } from '@/lib/utils';
+import { formatarBrl } from '@/lib/dinheiro';
 import type { ResumoMetricas } from '@/lib/types/metricas';
 
 /** Contagem animada. Respeita prefers-reduced-motion. */
@@ -40,7 +41,7 @@ interface CardMetrica {
   chave: string;
   titulo: string;
   valor: number;
-  formato: 'numero' | 'percentual';
+  formato: 'numero' | 'percentual' | 'dinheiro';
   descricao: string;
   icone: typeof PhoneCall;
   cor: string;
@@ -75,7 +76,9 @@ function MetricCard({ card, ativo, onClick }: { card: CardMetrica; ativo: boolea
           <p className="mt-2 text-3xl font-semibold tabular-nums text-ink">
             {card.formato === 'percentual'
               ? formatarPercentual(animado)
-              : formatarNumero(Math.round(animado))}
+              : card.formato === 'dinheiro'
+                ? formatarBrl(animado)
+                : formatarNumero(Math.round(animado))}
           </p>
           <p className="mt-1 text-xs text-slate-400">{card.descricao}</p>
         </div>
@@ -88,8 +91,12 @@ function MetricCard({ card, ativo, onClick }: { card: CardMetrica; ativo: boolea
 }
 
 /**
- * Os 4 indicadores do topo. Clicar em um card aplica o filtro de status
+ * Os indicadores do topo. Clicar em um card aplica o filtro de status
  * correspondente na tabela logo abaixo (via query string).
+ *
+ * O card de faturamento so aparece quando ha venda registrada: numa rede
+ * que ainda nao usa o registro de venda, um "R$ 0,00" fixo no topo parece
+ * defeito, nao ausencia de dado.
  */
 export function MetricsCards({ metricas }: { metricas: ResumoMetricas }) {
   const router = useRouter();
@@ -142,6 +149,21 @@ export function MetricsCards({ metricas }: { metricas: ResumoMetricas }) {
     },
   ];
 
+  // So entra quando ha venda: numa rede que ainda nao usa o registro, um
+  // "R$ 0,00" fixo no topo pareceria defeito em vez de ausencia de dado.
+  if (metricas.totalVendas > 0) {
+    cards.push({
+      chave: 'faturamento',
+      titulo: 'Faturamento',
+      valor: metricas.receita,
+      formato: 'dinheiro',
+      descricao: `${formatarNumero(metricas.totalVendas)} venda(s) · ticket ${formatarBrl(metricas.ticketMedio)}`,
+      icone: Wallet,
+      cor: 'text-teal-600',
+      fundo: 'bg-teal-50',
+    });
+  }
+
   function aplicarFiltro(card: CardMetrica) {
     const params = new URLSearchParams(searchParams.toString());
     if (!card.filtroStatus || statusAtivo === card.filtroStatus) params.delete('status');
@@ -150,7 +172,7 @@ export function MetricsCards({ metricas }: { metricas: ResumoMetricas }) {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
       {cards.map((card) => (
         <MetricCard
           key={card.chave}

@@ -11,6 +11,8 @@ import {
   buscarLojasDoUsuario,
 } from '@/lib/supabase/queries';
 import { lerFiltros, type ParametrosBusca } from '@/lib/filtros';
+import { createClient } from '@/lib/supabase/server';
+import type { Venda } from '@/lib/types/database';
 
 export const metadata = { title: 'Agendamentos · Casa do Celular' };
 
@@ -23,6 +25,30 @@ export default async function AgendamentosPage({ searchParams }: { searchParams:
     buscarLojasDoUsuario(),
     buscarAgendadoresDoUsuario(),
   ]);
+
+  // Vendas dos atendimentos com comparecimento. Consulta separada porque a
+  // maioria dos agendamentos nao tem venda: um join carregaria coluna nula
+  // na maior parte das linhas.
+  const comparecidos = agendamentos.filter((item) => item.status === 'compareceu').map((item) => item.id);
+
+  const vendas: Record<string, Pick<Venda, 'id' | 'valor' | 'descricao' | 'data_venda'>> = {};
+
+  if (comparecidos.length > 0) {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from('vendas')
+      .select('id, agendamento_id, valor, descricao, data_venda')
+      .in('agendamento_id', comparecidos.slice(0, 200));
+
+    for (const venda of data ?? []) {
+      vendas[venda.agendamento_id] = {
+        id: venda.id,
+        valor: Number(venda.valor),
+        descricao: venda.descricao,
+        data_venda: venda.data_venda,
+      };
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -56,6 +82,7 @@ export default async function AgendamentosPage({ searchParams }: { searchParams:
         lojas={lojas}
         agendadores={agendadores}
         statusInicial={filtros.status}
+        vendas={vendas}
       />
     </div>
   );
