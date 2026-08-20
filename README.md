@@ -23,6 +23,7 @@ franqueados com 10 a 80 lojas cada, sem reescrita.
 - [Estrutura de pastas](#estrutura-de-pastas)
 - [Testes](#testes)
 - [LGPD](#lgpd)
+- [Lembrete de véspera](#lembrete-de-véspera)
 - [Deploy](#deploy)
 - [Decisões de projeto](#decisões-de-projeto)
 - [Roadmap](#roadmap)
@@ -118,7 +119,7 @@ Abra `http://localhost:3000`. Sem sessão, o middleware manda para
 
 ## Banco de dados
 
-A ordem importa. São sete passos:
+A ordem importa. São oito passos:
 
 **1. Schema** — no SQL Editor do Supabase, cole e execute
 `supabase/migrations/`.
@@ -162,6 +163,11 @@ gerencia. **Não pule este passo.**
 Adiciona `agendamentos.anonimizado_em` e a função de retenção. É o que
 permite atender ao pedido de eliminação do titular sem destruir a métrica.
 
+**8. Notificações** — execute
+`supabase/migrations/20250101000006_notificacoes.sql`.
+Cria a tabela que garante que o lembrete de véspera não seja enviado duas
+vezes, e a função que lista quem deve receber.
+
 ### Tabelas
 
 | Tabela | Papel |
@@ -171,6 +177,7 @@ permite atender ao pedido de eliminação do titular sem destruir a métrica.
 | `lojas` | Unidades. `(franqueado_id, codigo_loja)` é único. |
 | `participacoes_societarias` | Define o que franqueado e diretor enxergam. `data_fim IS NULL` = ativa. |
 | `agendadores_lojas` | Vínculo do operacional com uma loja. |
+| `notificacoes` | Registro de lembrete enviado. Não guarda telefone nem e-mail. |
 | `agendamentos` | Tabela de fato. `franqueado_id` desnormalizado para filtrar por tenant sem join. |
 
 ---
@@ -370,6 +377,42 @@ como documento oficial.
 
 ---
 
+## Lembrete de véspera
+
+O não comparecimento é o número que o franqueado acompanha, e o lembrete
+ataca direto ele.
+
+```bash
+npm run lembrete:vespera             # envia
+npm run lembrete:vespera -- --seco   # só lista, não envia
+npm run lembrete:vespera -- --data 2026-09-01
+```
+
+Feito para rodar uma vez por dia, no fim da tarde.
+
+**Idempotência no banco, não no código.** O índice parcial
+`notificacoes_enviada_unica` cobre `(agendamento_id, tipo)` apenas onde
+`status = 'enviada'`. Rodar a rotina duas vezes não manda mensagem repetida,
+e falhas podem se repetir — precisam poder, senão uma indisponibilidade do
+provedor impediria a reentrega para sempre.
+
+**Fuso é o ponto mais fácil de errar.** `data_agendamento` é um `date` sem
+fuso, preenchido no horário de Brasília. Calcular "amanhã" a partir de UTC
+faria toda execução entre 21h e meia-noite enxergar o dia seguinte e
+notificar a data errada — e uma rotina noturna é exatamente o caso de uso.
+`dataDeAmanha` resolve pelo fuso das lojas, com testes cobrindo virada de
+mês, de ano e 29 de fevereiro.
+
+**Sem provedor contratado, opera em modo registro:** anota o que teria sido
+enviado e não manda nada. Isso permite acompanhar o volume e validar a
+rotina antes de contratar. Com `RESEND_API_KEY` e `REMETENTE_EMAIL`, envia
+e-mail de verdade.
+
+Registros anonimizados são ignorados — não há para quem mandar, e insistir
+seria tratar dado que o titular pediu para eliminar.
+
+---
+
 ## Deploy
 
 **Supabase:** crie o projeto, rode as migrations na ordem acima e ative
@@ -461,8 +504,8 @@ Próximos passos naturais, na ordem em que costumam doer:
    está abaixo.
 2. **Integração com a API do WhatsApp Business** — hoje o agendador digita o
    contato; o ideal é o registro nascer da conversa.
-3. **Notificação de véspera** — lembrete automático para o cliente que
-   agendou, atacando direto o não comparecimento.
+3. ~~**Notificação de véspera**~~ — feito. Falta ligar um provedor de envio
+   e agendar a rotina; a lógica e a idempotência estão prontas.
 4. ~~**Histórico de participação societária**~~ — feito. A tela *Societário*
    encerra e transfere participações preservando o histórico.
 5. **Exportação agendada** — relatório semanal por e-mail para o franqueado.

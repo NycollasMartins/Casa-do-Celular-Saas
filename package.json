@@ -15,7 +15,8 @@
     "test:rls": "vitest run tests/rls",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "lgpd:reter": "node scripts/anonimizar-antigos.mjs"
+    "lgpd:reter": "node scripts/anonimizar-antigos.mjs",
+    "lembrete:vespera": "node scripts/lembrete-vespera.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
