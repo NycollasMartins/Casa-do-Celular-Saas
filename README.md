@@ -116,7 +116,7 @@ Abra `http://localhost:3000`. Sem sessão, o middleware manda para
 
 ## Banco de dados
 
-A ordem importa. São quatro passos:
+A ordem importa. São cinco passos:
 
 **1. Schema** — no SQL Editor do Supabase, cole e execute
 `supabase/migrations/`.
@@ -140,12 +140,18 @@ Cria o franqueado, as 9 lojas, espelha os usuários, monta as participações e
 os vínculos, e gera 50 agendamentos de teste. O script falha com mensagem
 clara se você pular o passo 3.
 
+**5. Status de usuário** — execute
+`supabase/migrations/20250101000003_usuario_status.sql`.
+Adiciona `usuarios.status` e passa a filtrar usuário inativo nas funções de
+permissão. É o que permite desligar alguém pela tela de *Equipe* sem apagar
+o histórico de agendamentos que a pessoa registrou.
+
 ### Tabelas
 
 | Tabela | Papel |
 |---|---|
 | `franqueados` | O tenant. Todo dado de negócio pendura aqui. |
-| `usuarios` | Espelho de `auth.users` com papel e tenant. |
+| `usuarios` | Espelho de `auth.users` com papel, tenant e `status`. |
 | `lojas` | Unidades. `(franqueado_id, codigo_loja)` é único. |
 | `participacoes_societarias` | Define o que franqueado e diretor enxergam. `data_fim IS NULL` = ativa. |
 | `agendadores_lojas` | Vínculo do operacional com uma loja. |
