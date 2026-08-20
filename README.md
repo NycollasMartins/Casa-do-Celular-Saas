@@ -272,9 +272,10 @@ scripts/              seed-auth-users.mjs
 ## Testes
 
 ```bash
-npm test           # tudo
+npm test           # unitarios + RLS
 npm run test:unit  # so a logica pura, sem banco
 npm run test:rls   # so as permissoes, precisa do seed
+npm run test:e2e   # navegador de verdade, sobe o app na porta 3100
 ```
 
 **Unitários** cobrem validação de CPF pelo dígito verificador, máscaras,
@@ -287,8 +288,18 @@ Cobrem visibilidade por papel, negação de escrita cruzada entre lojas e a
 regressão da escalada de privilégio corrigida em
 `20250101000004_protege_campos_sensiveis.sql`.
 
-As suítes de RLS **se pulam sozinhas** quando os usuários do seed não
-existem, em vez de falharem em vermelho. É uma trava proposital: impede que
+**E2E** (Playwright) sobem a aplicação e navegam como usuário. A suíte de
+acesso não depende de banco povoado e cobre o pior defeito possível — uma
+rota do dashboard ficar aberta sem sessão — mais o contrato da API: dados
+recebem `401` em JSON, navegação de documento vai para o login. A suíte do
+fluxo crítico (registrar contato, ver na lista, exportar) precisa do seed.
+
+Roda na porta **3100**, não na 3000: a 3000 costuma estar ocupada por outro
+projeto, e um teste que conversa com o app errado falha com 404 em toda
+página, sem explicação aparente.
+
+As suítes de RLS e a de fluxo crítico **se pulam sozinhas** quando os
+usuários do seed não existem, em vez de falharem em vermelho. É uma trava proposital: impede que
 alguém aponte o `.env.local` para produção e saia escrevendo. Para rodá-las,
 execute antes `npm run seed:auth` e a migration de seed.
 

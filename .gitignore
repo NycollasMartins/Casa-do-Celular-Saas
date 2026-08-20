@@ -12,3 +12,8 @@ next-env.d.ts
 
 # Capturas e material de apoio, fora do build
 imagens
+
+# Playwright
+test-results
+playwright-report
+blob-report
