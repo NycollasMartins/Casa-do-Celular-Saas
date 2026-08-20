@@ -6,6 +6,7 @@ import {
   Building2,
   CalendarDays,
   Handshake,
+  Target,
   LayoutDashboard,
   LineChart,
   ShieldCheck,
@@ -42,6 +43,12 @@ export const ITENS_NAVEGACAO: ItemNav[] = [
     roles: ['super_admin', 'franqueado', 'diretor'],
   },
   { href: '/dashboard/lojas', label: 'Lojas', icone: Store, roles: ['super_admin', 'franqueado'] },
+  {
+    href: '/dashboard/metas',
+    label: 'Metas',
+    icone: Target,
+    roles: ['super_admin', 'franqueado'],
+  },
   { href: '/dashboard/usuarios', label: 'Equipe', icone: Users, roles: ['super_admin', 'franqueado'] },
   {
     href: '/dashboard/participacoes',

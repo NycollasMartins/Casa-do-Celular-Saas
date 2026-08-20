@@ -3,6 +3,7 @@ import { ptBR } from 'date-fns/locale';
 import { createClient } from '@/lib/supabase/server';
 import { STATUS_LABEL } from '@/lib/utils';
 import { ticketMedio } from '@/lib/dinheiro';
+import { fimDaCompetencia } from '@/lib/metas';
 import type {
   Agendamento,
   AgendamentoComRelacoes,
@@ -321,4 +322,52 @@ export async function calcularMetricasPorLoja(filtros: FiltroMetricas = {}) {
       taxaConversao: item.contatos > 0 ? Number(((item.agendados / item.contatos) * 100).toFixed(1)) : 0,
     }))
     .sort((a, b) => b.contatos - a.contatos);
+}
+
+/**
+ * Realizado de cada agendador na competencia, para confrontar com a meta.
+ *
+ * Usa o intervalo fechado do mes em vez do filtro de periodo da tela: meta
+ * e mensal, e comparar 7 dias com um alvo de 30 daria um numero enganoso.
+ */
+export async function desempenhoNaCompetencia(competencia: string) {
+  const metricas = await calcularMetricas({
+    periodo: 'personalizado',
+    dataInicio: competencia,
+    dataFim: fimDaCompetencia(competencia),
+  });
+
+  const registros = await buscarAgendamentos({
+    periodo: 'personalizado',
+    dataInicio: competencia,
+    dataFim: fimDaCompetencia(competencia),
+    limite: 10_000,
+  });
+
+  const vendas = await buscarVendasDosAgendamentos(registros.map((r) => r.id));
+
+  // As vendas precisam ser atribuidas ao agendador do atendimento, nao a
+  // quem lancou: quem trouxe o cliente e que fez o resultado.
+  const porAgendador = new Map<string, { vendas: number; receita: number }>();
+  for (const registro of registros) {
+    const valor = vendas.get(registro.id);
+    if (valor === undefined) continue;
+
+    const atual = porAgendador.get(registro.agendador_id) ?? { vendas: 0, receita: 0 };
+    atual.vendas++;
+    atual.receita += valor;
+    porAgendador.set(registro.agendador_id, atual);
+  }
+
+  return metricas.dadosPorAgendador.map((linha) => {
+    const venda = porAgendador.get(linha.agendadorId) ?? { vendas: 0, receita: 0 };
+    return {
+      agendadorId: linha.agendadorId,
+      nome: linha.nome,
+      agendamentos: linha.agendados,
+      taxaConversao: linha.taxaConversao,
+      vendas: venda.vendas,
+      receita: Math.round(venda.receita * 100) / 100,
+    };
+  });
 }

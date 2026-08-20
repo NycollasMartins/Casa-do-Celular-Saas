@@ -53,6 +53,38 @@ export const transferenciaSchema = z.object({
   data_inicio: z.string().optional().or(z.literal('')),
 });
 
+/**
+ * Meta mensal. Todos os alvos sao opcionais — cada rede acompanha o que
+ * importa para ela —, mas ao menos um precisa vir preenchido, senao a meta
+ * nao significa nada. O banco tem a mesma regra em meta_precisa_de_alvo.
+ */
+const alvoOpcional = z
+  .union([z.literal(''), z.coerce.number().positive()])
+  .optional()
+  .transform((valor) => (valor === '' || valor === undefined ? null : Number(valor)));
+
+export const metaSchema = z
+  .object({
+    usuario_id: z.string().uuid('Escolha o agendador'),
+    competencia: z.string().regex(/^\d{4}-\d{2}-01$/, 'Competencia invalida'),
+    meta_agendamentos: alvoOpcional,
+    meta_taxa_conversao: alvoOpcional,
+    meta_vendas: alvoOpcional,
+    meta_receita: alvoOpcional,
+  })
+  .refine(
+    (dados) =>
+      dados.meta_agendamentos !== null ||
+      dados.meta_taxa_conversao !== null ||
+      dados.meta_vendas !== null ||
+      dados.meta_receita !== null,
+    { path: ['meta_agendamentos'], message: 'Defina ao menos um alvo' }
+  )
+  .refine(
+    (dados) => dados.meta_taxa_conversao === null || dados.meta_taxa_conversao <= 100,
+    { path: ['meta_taxa_conversao'], message: 'A taxa nao pode passar de 100%' }
+  );
+
 export const franqueadoSchema = z.object({
   nome: z.string().trim().min(3, 'Informe a razao social'),
   cnpj: z
@@ -72,4 +104,5 @@ export type UsuarioInput = z.infer<typeof usuarioSchema>;
 export type UsuarioEdicaoInput = z.infer<typeof usuarioEdicaoSchema>;
 export type ParticipacaoInput = z.infer<typeof participacaoSchema>;
 export type TransferenciaInput = z.infer<typeof transferenciaSchema>;
+export type MetaInput = z.infer<typeof metaSchema>;
 export type FranqueadoInput = z.infer<typeof franqueadoSchema>;

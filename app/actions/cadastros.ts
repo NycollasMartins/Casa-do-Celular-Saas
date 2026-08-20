@@ -7,6 +7,7 @@ import { buscarUsuarioAtual, podeGerenciarCadastros } from '@/lib/auth/session';
 import {
   franqueadoSchema,
   lojaSchema,
+  metaSchema,
   participacaoSchema,
   transferenciaSchema,
   usuarioEdicaoSchema,
@@ -519,4 +520,58 @@ export async function transferirParticipacao(
   revalidatePath('/dashboard/participacoes');
   revalidatePath('/dashboard');
   return { sucesso: true, mensagem: 'Participacao transferida.' };
+}
+
+/* -------------------------------- Metas ------------------------------- */
+
+/**
+ * Grava a meta do agendador para a competencia. Upsert por (usuario_id,
+ * competencia): redefinir a meta do mes e operacao comum — o alvo muda
+ * quando a loja entra em campanha — e obrigar a apagar antes so criaria
+ * passo extra.
+ */
+export async function salvarMeta(formData: FormData): Promise<ResultadoAction> {
+  const gestor = await buscarUsuarioAtual();
+  if (!gestor || !podeGerenciarCadastros(gestor.role)) {
+    return { sucesso: false, mensagem: 'Voce nao tem permissao para definir metas.' };
+  }
+
+  const parsed = metaSchema.safeParse(objeto(formData));
+  if (!parsed.success) {
+    return { sucesso: false, mensagem: 'Revise os campos.', erros: parsed.error.flatten().fieldErrors };
+  }
+  const dados = parsed.data;
+
+  const supabase = createClient();
+  const { error } = await supabase.from('metas').upsert(
+    {
+      usuario_id: dados.usuario_id,
+      competencia: dados.competencia,
+      meta_agendamentos: dados.meta_agendamentos,
+      meta_taxa_conversao: dados.meta_taxa_conversao,
+      meta_vendas: dados.meta_vendas,
+      meta_receita: dados.meta_receita,
+      definida_por: gestor.id,
+    },
+    { onConflict: 'usuario_id,competencia' }
+  );
+
+  if (error) return { sucesso: false, mensagem: `Nao foi possivel salvar: ${error.message}` };
+
+  revalidatePath('/dashboard/metas');
+  return { sucesso: true, mensagem: 'Meta salva.' };
+}
+
+export async function removerMeta(id: string): Promise<ResultadoAction> {
+  const gestor = await buscarUsuarioAtual();
+  if (!gestor || !podeGerenciarCadastros(gestor.role)) {
+    return { sucesso: false, mensagem: 'Voce nao tem permissao para remover metas.' };
+  }
+
+  const supabase = createClient();
+  const { error } = await supabase.from('metas').delete().eq('id', id);
+  if (error) return { sucesso: false, mensagem: `Nao foi possivel remover: ${error.message}` };
+
+  revalidatePath('/dashboard/metas');
+  return { sucesso: true, mensagem: 'Meta removida.' };
 }

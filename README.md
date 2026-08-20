@@ -25,6 +25,7 @@ franqueados com 10 a 80 lojas cada, sem reescrita.
 - [LGPD](#lgpd)
 - [Lembrete de véspera](#lembrete-de-véspera)
 - [Registro de venda](#registro-de-venda)
+- [Metas por agendador](#metas-por-agendador)
 - [Deploy](#deploy)
 - [Decisões de projeto](#decisões-de-projeto)
 - [Roadmap](#roadmap)
@@ -120,7 +121,7 @@ Abra `http://localhost:3000`. Sem sessão, o middleware manda para
 
 ## Banco de dados
 
-A ordem importa. São nove passos:
+A ordem importa. São dez passos:
 
 **1. Schema** — no SQL Editor do Supabase, cole e execute
 `supabase/migrations/`.
@@ -173,6 +174,10 @@ vezes, e a função que lista quem deve receber.
 Fecha o funil no faturamento. Inclui o trigger que impede registrar venda em
 atendimento sem comparecimento confirmado.
 
+**10. Metas** — execute `supabase/migrations/20250101000008_metas.sql`.
+Metas mensais por agendador, com alvos opcionais de agendamentos, conversão,
+vendas e faturamento.
+
 ### Tabelas
 
 | Tabela | Papel |
@@ -184,6 +189,7 @@ atendimento sem comparecimento confirmado.
 | `agendadores_lojas` | Vínculo do operacional com uma loja. |
 | `notificacoes` | Registro de lembrete enviado. Não guarda telefone nem e-mail. |
 | `vendas` | Fecha o funil. Uma por agendamento, só onde houve comparecimento. |
+| `metas` | Alvo mensal por agendador. Uma por pessoa e competência. |
 | `agendamentos` | Tabela de fato. `franqueado_id` desnormalizado para filtrar por tenant sem join. |
 
 ---
@@ -450,6 +456,38 @@ defeito em vez de ausência de dado.
 
 ---
 
+## Metas por agendador
+
+O sistema já media o desempenho de cada agendador; faltava o outro lado da
+conta. "42 agendamentos no mês" não diz se foi bom ou ruim — e o franqueado
+precisa saber quem está abaixo **antes** do fim do mês, não depois.
+
+Em *Metas*, cada agendador recebe alvos mensais opcionais de agendamentos,
+taxa de conversão, vendas e faturamento. Basta um alvo definido; os demais
+ficam em branco.
+
+**A situação compara com o esperado até hoje, não com o alvo cheio.** No dia
+10 de um mês de 30, quem fez 33% da meta está *em dia*. Comparar o realizado
+parcial contra o alvo do mês inteiro acusaria todo mundo de atrasado até o
+último dia — o que tornaria o indicador inútil justamente enquanto ainda dá
+tempo de reagir.
+
+**Taxa de conversão não é proporcionalizada**, porque não acumula: 60% no
+dia 5 já é 60%. Aplicar a mesma regra dos volumes diria que ela superou em
+muito a meta.
+
+**A tela trabalha sobre um mês fechado**, com seletor próprio, em vez de
+aproveitar o filtro de período do restante do sistema. Comparar um recorte
+de 7 dias com um alvo mensal produziria um número enganoso.
+
+As vendas são atribuídas ao **agendador do atendimento**, não a quem lançou
+o registro: quem trouxe o cliente é quem fez o resultado.
+
+O agendador enxerga a própria meta — esconder o alvo transformaria a meta em
+instrumento de cobrança em vez de direção.
+
+---
+
 ## Deploy
 
 **Supabase:** crie o projeto, rode as migrations na ordem acima e ative
@@ -537,8 +575,8 @@ duas".
 
 Próximos passos naturais, na ordem em que costumam doer:
 
-1. **Metas por agendador** — conversão esperada por pessoa e alerta de quem
-   está abaixo.
+1. ~~**Metas por agendador**~~ — feito. Alvos mensais e alerta de quem está
+   fora do ritmo.
 2. **Integração com a API do WhatsApp Business** — hoje o agendador digita o
    contato; o ideal é o registro nascer da conversa.
 3. ~~**Notificação de véspera**~~ — feito. Falta ligar um provedor de envio

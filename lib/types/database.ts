@@ -102,6 +102,20 @@ export type Venda = {
   updated_at: string;
 };
 
+export type MetaAgendador = {
+  id: string;
+  usuario_id: string;
+  /** Sempre o dia 1 do mes. */
+  competencia: string;
+  meta_agendamentos: number | null;
+  meta_taxa_conversao: number | null;
+  meta_vendas: number | null;
+  meta_receita: number | null;
+  definida_por: string;
+  created_at: string;
+  updated_at: string;
+};
+
 /** Agendamento com os joins usados na tabela do dashboard. */
 export type AgendamentoComRelacoes = Agendamento & {
   loja: Pick<Loja, 'id' | 'nome' | 'codigo_loja'> | null;
@@ -125,6 +139,7 @@ export type Database = {
       agendadores_lojas: Tabela<AgendadorLoja>;
       agendamentos: Tabela<Agendamento>;
       vendas: Tabela<Venda>;
+      metas: Tabela<MetaAgendador>;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
