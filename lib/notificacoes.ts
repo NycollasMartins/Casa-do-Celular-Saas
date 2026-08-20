@@ -71,10 +71,32 @@ export function montarMensagem(destinatario: DestinatarioLembrete): {
   };
 }
 
-/** Sem e-mail cadastrado nao ha canal de envio configurado hoje. */
-export function canalDisponivel(destinatario: DestinatarioLembrete, temProvedor: boolean): Canal {
-  if (!temProvedor) return 'registro';
-  return destinatario.cliente_email ? 'email' : 'registro';
+export interface ProvedoresDisponiveis {
+  whatsapp: boolean;
+  email: boolean;
+}
+
+/**
+ * Escolhe o canal do lembrete.
+ *
+ * WhatsApp na frente do e-mail de proposito: e onde a pessoa efetivamente
+ * le, e o lembrete existe para ser lido. O telefone e obrigatorio no
+ * cadastro e o e-mail nao, entao a cobertura tambem e maior.
+ *
+ * `registro` e o fim de linha — anota que o lembrete era devido e nao
+ * manda nada, sem fingir que houve envio.
+ */
+export function canalDisponivel(
+  destinatario: DestinatarioLembrete,
+  provedores: ProvedoresDisponiveis | boolean
+): Canal {
+  // Compatibilidade com a assinatura antiga, de quando so havia e-mail.
+  const disponiveis: ProvedoresDisponiveis =
+    typeof provedores === 'boolean' ? { whatsapp: false, email: provedores } : provedores;
+
+  if (disponiveis.whatsapp && destinatario.cliente_telefone) return 'whatsapp';
+  if (disponiveis.email && destinatario.cliente_email) return 'email';
+  return 'registro';
 }
 
 export interface ResultadoEnvio {

@@ -422,10 +422,33 @@ notificar a data errada — e uma rotina noturna é exatamente o caso de uso.
 `dataDeAmanha` resolve pelo fuso das lojas, com testes cobrindo virada de
 mês, de ano e 29 de fevereiro.
 
-**Sem provedor contratado, opera em modo registro:** anota o que teria sido
-enviado e não manda nada. Isso permite acompanhar o volume e validar a
-rotina antes de contratar. Com `RESEND_API_KEY` e `REMETENTE_EMAIL`, envia
-e-mail de verdade.
+**Dois canais, com precedência.** WhatsApp vem na frente do e-mail: é onde a
+pessoa efetivamente lê, e o telefone é obrigatório no cadastro enquanto o
+e-mail não é. Sem provedor algum, opera em **modo registro** — anota o que
+teria sido enviado e não manda nada, o que permite acompanhar o volume e
+validar a rotina antes de contratar.
+
+**No WhatsApp é template, nunca texto livre.** A Meta só permite texto livre
+dentro da janela de 24h depois que o cliente escreveu para você. Um lembrete
+de véspera é sempre iniciado pela empresa, então precisa de template
+aprovado previamente — texto livre fora da janela retorna erro `131047` e,
+repetido, derruba a qualidade do número.
+
+O template esperado (`lembrete_vespera`) tem três parâmetros posicionais:
+
+```
+Ola, {{1}}! Lembrando do seu atendimento na {{2}}, amanha ({{3}}).
+```
+
+A ordem importa e está fixada em teste: trocar dois parâmetros de lugar
+entrega uma mensagem que diz a coisa errada, sem erro nenhum.
+
+**O telefone é normalizado para E.164** antes do envio. `normalizarTelefoneBr`
+aceita o que o agendador digita na prática — com máscara, sem máscara, com
+`+55`, com zero de operadora — e **recusa em vez de adivinhar** quando o
+resultado seria ambíguo: número errado não gera erro visível, gera mensagem
+entregue a um estranho. A validação inclui a lista de DDDs realmente
+atribuídos, porque o intervalo 11–99 não é contínuo.
 
 Registros anonimizados são ignorados — não há para quem mandar, e insistir
 seria tratar dado que o titular pediu para eliminar.
@@ -617,8 +640,9 @@ Próximos passos naturais, na ordem em que costumam doer:
 
 1. ~~**Metas por agendador**~~ — feito. Alvos mensais e alerta de quem está
    fora do ritmo.
-2. **Integração com a API do WhatsApp Business** — hoje o agendador digita o
-   contato; o ideal é o registro nascer da conversa.
+2. **Integração com a API do WhatsApp Business** — o envio de lembrete já usa
+   a Cloud API. Falta o outro sentido: o registro nascer da conversa, com
+   webhook de mensagens recebidas.
 3. ~~**Notificação de véspera**~~ — feito. Falta ligar um provedor de envio
    e agendar a rotina; a lógica e a idempotência estão prontas.
 4. ~~**Histórico de participação societária**~~ — feito. A tela *Societário*

@@ -83,15 +83,41 @@ describe('montarMensagem', () => {
 });
 
 describe('canalDisponivel', () => {
-  it('usa e-mail quando ha provedor e endereco', () => {
-    expect(canalDisponivel(BASE, true)).toBe('email');
+  const SO_EMAIL = { whatsapp: false, email: true };
+  const SO_WHATSAPP = { whatsapp: true, email: false };
+  const AMBOS = { whatsapp: true, email: true };
+  const NENHUM = { whatsapp: false, email: false };
+
+  it('usa e-mail quando so ele esta configurado', () => {
+    expect(canalDisponivel(BASE, SO_EMAIL)).toBe('email');
+  });
+
+  /**
+   * WhatsApp vem na frente porque e onde a pessoa efetivamente le, e o
+   * lembrete existe para ser lido.
+   */
+  it('prefere WhatsApp quando os dois estao disponiveis', () => {
+    expect(canalDisponivel(BASE, AMBOS)).toBe('whatsapp');
+  });
+
+  it('cai para e-mail quando o WhatsApp nao esta configurado', () => {
+    expect(canalDisponivel(BASE, SO_EMAIL)).toBe('email');
   });
 
   it('cai para registro quando nao ha provedor contratado', () => {
-    expect(canalDisponivel(BASE, false)).toBe('registro');
+    expect(canalDisponivel(BASE, NENHUM)).toBe('registro');
   });
 
   it('cai para registro quando o cliente nao deixou e-mail', () => {
-    expect(canalDisponivel({ ...BASE, cliente_email: null }, true)).toBe('registro');
+    expect(canalDisponivel({ ...BASE, cliente_email: null }, SO_EMAIL)).toBe('registro');
+  });
+
+  it('usa WhatsApp mesmo sem e-mail, porque telefone e obrigatorio', () => {
+    expect(canalDisponivel({ ...BASE, cliente_email: null }, SO_WHATSAPP)).toBe('whatsapp');
+  });
+
+  it('aceita a assinatura antiga, de quando so havia e-mail', () => {
+    expect(canalDisponivel(BASE, true)).toBe('email');
+    expect(canalDisponivel(BASE, false)).toBe('registro');
   });
 });

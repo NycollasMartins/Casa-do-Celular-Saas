@@ -9,11 +9,12 @@
  * parcial `notificacoes_enviada_unica` garante no banco que ninguem recebe
  * a mesma mensagem duas vezes, mesmo se a rotina rodar em duplicidade.
  *
- * PROVEDOR
- * Com RESEND_API_KEY e REMETENTE_EMAIL definidos, envia e-mail de verdade.
- * Sem eles, opera no canal `registro`: anota o que teria sido enviado e nao
- * manda nada. Isso permite acompanhar o volume e validar a rotina antes de
- * contratar provedor.
+ * CANAIS
+ * WhatsApp (Cloud API) tem precedencia sobre e-mail: e onde a pessoa
+ * efetivamente le, e o telefone e obrigatorio no cadastro enquanto o e-mail
+ * nao e. Sem provedor algum, opera no canal `registro`: anota o que teria
+ * sido enviado e nao manda nada, o que permite acompanhar o volume e
+ * validar a rotina antes de contratar.
  */
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync } from 'node:fs';
@@ -37,7 +38,16 @@ if (!url || !serviceKey) {
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const REMETENTE = process.env.REMETENTE_EMAIL;
-const temProvedor = Boolean(RESEND_API_KEY && REMETENTE);
+const temEmail = Boolean(RESEND_API_KEY && REMETENTE);
+
+const WPP_API_VERSION = process.env.WHATSAPP_API_VERSION ?? 'v21.0';
+const WPP_PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
+const WPP_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
+const WPP_TEMPLATE = process.env.WHATSAPP_TEMPLATE_LEMBRETE ?? 'lembrete_vespera';
+const WPP_IDIOMA = process.env.WHATSAPP_TEMPLATE_IDIOMA ?? 'pt_BR';
+const temWhatsapp = Boolean(WPP_PHONE_ID && WPP_TOKEN);
+
+const temProvedor = temEmail || temWhatsapp;
 
 const argumentos = process.argv.slice(2);
 const seco = argumentos.includes('--seco');
@@ -76,6 +86,78 @@ function montarMensagem(destinatario) {
   };
 }
 
+/** Espelha lib/whatsapp.ts. Ver la o porque da lista de DDDs. */
+const DDDS_VALIDOS = new Set([
+  11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 24, 27, 28,
+  31, 32, 33, 34, 35, 37, 38, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+  51, 53, 54, 55, 61, 62, 63, 64, 65, 66, 67, 68, 69,
+  71, 73, 74, 75, 77, 79, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+  91, 92, 93, 94, 95, 96, 97, 98, 99,
+]);
+
+function normalizarTelefoneBr(entrada) {
+  let digitos = (entrada ?? '').replace(/\D/g, '');
+  if (!digitos) return null;
+
+  if (digitos.startsWith('0055')) digitos = digitos.slice(2);
+  if (digitos.length === 13 && digitos.startsWith('55')) digitos = digitos.slice(2);
+  else if (digitos.length === 12 && digitos.startsWith('55')) digitos = digitos.slice(2);
+  if (digitos.length === 12 && digitos.startsWith('0')) digitos = digitos.slice(1);
+  if (digitos.length === 11 && digitos.startsWith('0')) digitos = digitos.slice(1);
+
+  if (digitos.length !== 10 && digitos.length !== 11) return null;
+  if (!DDDS_VALIDOS.has(Number(digitos.slice(0, 2)))) return null;
+
+  const assinante = digitos.slice(2);
+  if (assinante.length === 9 ? !assinante.startsWith('9') : !/^[2-5]/.test(assinante)) return null;
+
+  return `55${digitos}`;
+}
+
+/**
+ * Template, nao texto livre: a Meta so permite texto livre dentro da janela
+ * de 24h depois que o cliente escreveu. Lembrete e sempre iniciado pela
+ * empresa.
+ */
+async function enviarWhatsapp(destinatario) {
+  const destino = normalizarTelefoneBr(destinatario.cliente_telefone);
+  if (!destino) throw new Error(`Telefone invalido: ${destinatario.cliente_telefone}`);
+
+  const primeiroNome = destinatario.cliente_nome.trim().split(/\s+/)[0];
+
+  const resposta = await fetch(
+    `https://graph.facebook.com/${WPP_API_VERSION}/${WPP_PHONE_ID}/messages`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${WPP_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: destino,
+        type: 'template',
+        template: {
+          name: WPP_TEMPLATE,
+          language: { code: WPP_IDIOMA },
+          components: [
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: primeiroNome },
+                { type: 'text', text: destinatario.loja_nome },
+                { type: 'text', text: diaEMes(destinatario.data_agendamento) },
+              ],
+            },
+          ],
+        },
+      }),
+    }
+  );
+
+  if (!resposta.ok) {
+    const corpo = await resposta.text();
+    throw new Error(`Meta respondeu ${resposta.status}: ${corpo.slice(0, 200)}`);
+  }
+}
+
 async function enviarEmail(destinatario) {
   const { assunto, texto } = montarMensagem(destinatario);
 
@@ -103,7 +185,9 @@ const admin = createClient(url, serviceKey, { auth: { persistSession: false } })
 const data = dataForcada ?? dataDeAmanha();
 
 console.log(`Lembretes para ${data} (fuso ${FUSO})`);
-console.log(`Provedor de e-mail: ${temProvedor ? 'Resend' : 'nenhum — modo registro'}`);
+console.log(`WhatsApp: ${temWhatsapp ? 'Cloud API' : 'nao configurado'}`);
+console.log(`E-mail:   ${temEmail ? 'Resend' : 'nao configurado'}`);
+if (!temProvedor) console.log('Nenhum provedor — modo registro.');
 
 const { data: destinatarios, error } = await admin.rpc('agendamentos_para_lembrete', {
   p_data: data,
@@ -122,10 +206,16 @@ if (!destinatarios || destinatarios.length === 0) {
 
 console.log(`${destinatarios.length} pessoa(s) a lembrar.\n`);
 
+/** WhatsApp na frente: e onde a pessoa efetivamente le. */
+function escolherCanal(item) {
+  if (temWhatsapp && item.cliente_telefone) return 'whatsapp';
+  if (temEmail && item.cliente_email) return 'email';
+  return 'registro';
+}
+
 if (seco) {
   for (const item of destinatarios) {
-    const canal = temProvedor && item.cliente_email ? 'email' : 'registro';
-    console.log(`  [${canal}] ${item.cliente_nome} — ${item.loja_nome}`);
+    console.log(`  [${escolherCanal(item)}] ${item.cliente_nome} — ${item.loja_nome}`);
   }
   console.log('\n[modo seco] Nada foi enviado nem registrado.');
   process.exit(0);
@@ -136,15 +226,16 @@ let falhas = 0;
 let registradas = 0;
 
 for (const destinatario of destinatarios) {
-  const podeEnviar = temProvedor && destinatario.cliente_email;
-  const canal = podeEnviar ? 'email' : 'registro';
+  const canal = escolherCanal(destinatario);
+  const podeEnviar = canal !== 'registro';
 
   let status = 'enviada';
   let detalhe = null;
 
   if (podeEnviar) {
     try {
-      await enviarEmail(destinatario);
+      if (canal === 'whatsapp') await enviarWhatsapp(destinatario);
+      else await enviarEmail(destinatario);
       enviadas++;
     } catch (excecao) {
       status = 'falhou';
@@ -153,7 +244,7 @@ for (const destinatario of destinatarios) {
     }
   } else {
     registradas++;
-    detalhe = temProvedor ? 'Cliente sem e-mail cadastrado' : 'Sem provedor configurado';
+    detalhe = temProvedor ? 'Cliente sem canal de contato utilizavel' : 'Sem provedor configurado';
   }
 
   const { error: erroRegistro } = await admin.from('notificacoes').insert({
@@ -171,7 +262,7 @@ for (const destinatario of destinatarios) {
   }
 
   const marca = status === 'falhou' ? '!' : podeEnviar ? '+' : '.';
-  console.log(`  ${marca} ${destinatario.cliente_nome} (${destinatario.loja_nome})`);
+  console.log(`  ${marca} [${canal}] ${destinatario.cliente_nome} (${destinatario.loja_nome})`);
 }
 
 console.log(
@@ -179,5 +270,8 @@ console.log(
 );
 
 if (!temProvedor) {
-  console.log('Para enviar de verdade, defina RESEND_API_KEY e REMETENTE_EMAIL.');
+  console.log(
+    'Para enviar de verdade, defina WHATSAPP_PHONE_NUMBER_ID e WHATSAPP_ACCESS_TOKEN,\n' +
+      'ou RESEND_API_KEY e REMETENTE_EMAIL.'
+  );
 }
