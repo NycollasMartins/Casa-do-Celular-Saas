@@ -102,6 +102,27 @@ export type Venda = {
   updated_at: string;
 };
 
+export type Notificacao = {
+  id: string;
+  agendamento_id: string;
+  tipo: 'vespera';
+  canal: 'email' | 'whatsapp' | 'sms' | 'registro';
+  status: 'enviada' | 'falhou';
+  /** Mensagem tecnica do provedor quando falha. Nunca o conteudo enviado. */
+  detalhe: string | null;
+  criada_em: string;
+};
+
+export type EnvioRelatorio = {
+  id: string;
+  franqueado_id: string;
+  /** Segunda-feira da semana coberta. */
+  semana_inicio: string;
+  status: 'enviado' | 'falhou';
+  detalhe: string | null;
+  criado_em: string;
+};
+
 export type MetaAgendador = {
   id: string;
   usuario_id: string;
@@ -140,6 +161,8 @@ export type Database = {
       agendamentos: Tabela<Agendamento>;
       vendas: Tabela<Venda>;
       metas: Tabela<MetaAgendador>;
+      notificacoes: Tabela<Notificacao>;
+      envios_relatorio: Tabela<EnvioRelatorio>;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

@@ -32,6 +32,36 @@ export default async function AgendamentosPage({ searchParams }: { searchParams:
   const comparecidos = agendamentos.filter((item) => item.status === 'compareceu').map((item) => item.id);
 
   const vendas: Record<string, Pick<Venda, 'id' | 'valor' | 'descricao' | 'data_venda'>> = {};
+  const lembretes: Record<string, { status: 'enviada' | 'falhou'; canal: string; detalhe: string | null }> =
+    {};
+
+  // Lembretes so fazem sentido para quem tem visita marcada. Buscar para a
+  // lista inteira traria linha para agendamento que a rotina nunca alcanca.
+  const comVisita = agendamentos
+    .filter((item) => item.status === 'agendado' || item.status === 'compareceu' || item.status === 'nao_compareceu')
+    .map((item) => item.id);
+
+  if (comVisita.length > 0) {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from('notificacoes')
+      .select('agendamento_id, status, canal, detalhe')
+      .eq('tipo', 'vespera')
+      .in('agendamento_id', comVisita.slice(0, 200))
+      .order('criada_em', { ascending: false });
+
+    // A consulta vem da mais recente para a mais antiga e a tabela permite
+    // varias falhas por agendamento; a primeira ocorrencia de cada id e a
+    // que vale.
+    for (const linha of data ?? []) {
+      if (lembretes[linha.agendamento_id]) continue;
+      lembretes[linha.agendamento_id] = {
+        status: linha.status as 'enviada' | 'falhou',
+        canal: linha.canal,
+        detalhe: linha.detalhe,
+      };
+    }
+  }
 
   if (comparecidos.length > 0) {
     const supabase = createClient();
@@ -83,6 +113,7 @@ export default async function AgendamentosPage({ searchParams }: { searchParams:
         agendadores={agendadores}
         statusInicial={filtros.status}
         vendas={vendas}
+        lembretes={lembretes}
       />
     </div>
   );

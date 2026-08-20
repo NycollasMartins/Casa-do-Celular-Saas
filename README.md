@@ -464,6 +464,11 @@ atribuídos, porque o intervalo 11–99 não é contínuo.
 Registros anonimizados são ignorados — não há para quem mandar, e insistir
 seria tratar dado que o titular pediu para eliminar.
 
+**Na tabela de Agendamentos, um sininho ao lado da data** mostra se o
+lembrete saiu: verde quando enviado (o rótulo diz por qual canal), vermelho
+quando falhou (o rótulo traz o motivo). Sem ele, a única forma de saber era
+ler a saída do script no terminal — e o franqueado não abre terminal.
+
 ---
 
 ## Registro de venda

@@ -2,7 +2,18 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
-import { ArrowDown, ArrowUp, ArrowUpDown, Download, Pencil, Search, Trash2, Wallet } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  BellRing,
+  BellOff,
+  Download,
+  Pencil,
+  Search,
+  Trash2,
+  Wallet,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -53,6 +64,8 @@ interface Props {
   statusInicial?: AgendamentoStatus[];
   /** Vendas ja registradas, por agendamento. Vazio quando ninguem lancou. */
   vendas?: Record<string, Pick<Venda, 'id' | 'valor' | 'descricao' | 'data_venda'>>;
+  /** Lembrete de vespera por agendamento, quando a rotina ja passou por ele. */
+  lembretes?: Record<string, { status: 'enviada' | 'falhou'; canal: string; detalhe: string | null }>;
 }
 
 export function AgendamentosTable({
@@ -62,6 +75,7 @@ export function AgendamentosTable({
   agendadores,
   statusInicial = [],
   vendas = {},
+  lembretes = {},
 }: Props) {
   const [busca, setBusca] = useState('');
   const [lojaId, setLojaId] = useState<string>(TODOS);
@@ -305,7 +319,24 @@ export function AgendamentosTable({
                   <TableCell className="whitespace-nowrap text-slate-600">{item.loja?.nome ?? '-'}</TableCell>
                 ) : null}
                 <TableCell className="whitespace-nowrap tabular-nums">
-                  {formatarDataIso(item.data_agendamento)}
+                  <span className="inline-flex items-center gap-1.5">
+                    {formatarDataIso(item.data_agendamento)}
+                    {/* Sem o indicador, a unica forma de saber se o lembrete
+                        saiu era ler a saida do script no terminal. */}
+                    {lembretes[item.id] ? (
+                      lembretes[item.id].status === 'enviada' ? (
+                        <BellRing
+                          className="h-3.5 w-3.5 shrink-0 text-emerald-600"
+                          aria-label={`Lembrete enviado por ${lembretes[item.id].canal}`}
+                        />
+                      ) : (
+                        <BellOff
+                          className="h-3.5 w-3.5 shrink-0 text-danger"
+                          aria-label={`Lembrete falhou: ${lembretes[item.id].detalhe ?? 'motivo nao registrado'}`}
+                        />
+                      )
+                    ) : null}
+                  </span>
                 </TableCell>
                 <TableCell>
                   <Badge variant={VARIANTE_BADGE[item.status]}>{STATUS_LABEL[item.status]}</Badge>
