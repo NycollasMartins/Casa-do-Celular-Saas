@@ -8,6 +8,7 @@ import {
   Handshake,
   LayoutDashboard,
   LineChart,
+  ShieldCheck,
   Store,
   Users,
 } from 'lucide-react';
@@ -46,6 +47,12 @@ export const ITENS_NAVEGACAO: ItemNav[] = [
     href: '/dashboard/participacoes',
     label: 'Societario',
     icone: Handshake,
+    roles: ['super_admin', 'franqueado'],
+  },
+  {
+    href: '/dashboard/privacidade',
+    label: 'Privacidade',
+    icone: ShieldCheck,
     roles: ['super_admin', 'franqueado'],
   },
   { href: '/admin/franqueados', label: 'Franqueados', icone: Building2, roles: ['super_admin'] },

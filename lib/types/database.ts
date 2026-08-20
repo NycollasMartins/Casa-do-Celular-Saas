@@ -84,6 +84,8 @@ export type Agendamento = {
   data_agendamento: string;
   status: AgendamentoStatus;
   observacoes: string | null;
+  /** Quando os dados pessoais foram removidos (LGPD). Nulo = dados presentes. */
+  anonimizado_em: string | null;
   created_at: string;
   updated_at: string;
 }

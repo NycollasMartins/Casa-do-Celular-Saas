@@ -22,6 +22,7 @@ franqueados com 10 a 80 lojas cada, sem reescrita.
 - [Testando as permissões](#testando-as-permissões)
 - [Estrutura de pastas](#estrutura-de-pastas)
 - [Testes](#testes)
+- [LGPD](#lgpd)
 - [Deploy](#deploy)
 - [Decisões de projeto](#decisões-de-projeto)
 - [Roadmap](#roadmap)
@@ -117,7 +118,7 @@ Abra `http://localhost:3000`. Sem sessão, o middleware manda para
 
 ## Banco de dados
 
-A ordem importa. São seis passos:
+A ordem importa. São sete passos:
 
 **1. Schema** — no SQL Editor do Supabase, cole e execute
 `supabase/migrations/`.
@@ -155,6 +156,11 @@ própria linha sem restringir coluna, então qualquer usuário podia rodar
 enxergar o tenant inteiro. Um trigger `BEFORE UPDATE` passa a comparar OLD e
 NEW e bloquear mudança de `role`, `franqueado_id` e `status` por quem não
 gerencia. **Não pule este passo.**
+
+**7. Anonimização (LGPD)** — execute
+`supabase/migrations/20250101000005_anonimizacao_lgpd.sql`.
+Adiciona `agendamentos.anonimizado_em` e a função de retenção. É o que
+permite atender ao pedido de eliminação do titular sem destruir a métrica.
 
 ### Tabelas
 
@@ -302,6 +308,48 @@ As suítes de RLS e a de fluxo crítico **se pulam sozinhas** quando os
 usuários do seed não existem, em vez de falharem em vermelho. É uma trava proposital: impede que
 alguém aponte o `.env.local` para produção e saia escrevendo. Para rodá-las,
 execute antes `npm run seed:auth` e a migration de seed.
+
+---
+
+## LGPD
+
+O sistema guarda nome, CPF, telefone e e-mail de clientes finais. CPF é dado
+pessoal sob regime estrito, e o titular pode exigir a eliminação a qualquer
+momento (art. 18, VI).
+
+**Anonimizar, não apagar.** Apagar a linha destruiria a métrica — o
+agendamento é o fato que o sistema existe para medir. O art. 12 resolve:
+dado anonimizado deixa de ser dado pessoal. Limpamos nome, CPF, telefone,
+e-mail e observações, e preservamos loja, agendador, data e status.
+
+`observacoes` entra na limpeza porque é campo livre, onde na prática acabam
+anotações como *"irmã da Dona Maria, mora na quadra 12"* — dado pessoal que
+escaparia se olhássemos só para as colunas com "cliente" no nome.
+
+Os marcadores são **fixos e iguais para todos**. Um marcador que variasse
+por pessoa (um hash do CPF, por exemplo) permitiria reidentificar por
+comparação: seria pseudonimização, que a LGPD ainda trata como dado pessoal.
+
+**Pedido do titular.** Em *Privacidade*, o franqueado busca pelo CPF e
+anonimiza todos os registros de uma vez — o pedido vale para todo o
+tratamento, não para um registro isolado.
+
+**Retenção.** O padrão é 24 meses. A varredura roda por:
+
+```bash
+npm run lgpd:reter          # 24 meses
+npm run lgpd:reter 12       # outro prazo
+npm run lgpd:reter -- --seco # só relata, não altera
+```
+
+Feito para ser agendado (cron mensal). O prazo é uma sugestão técnica: cabe
+ao controlador confirmar com base na finalidade declarada.
+
+**Política pública** em `/privacidade`, rota aberta — o titular dos dados
+normalmente não tem conta no sistema. O texto é um ponto de partida escrito
+a partir do que o sistema de fato coleta; os campos entre colchetes precisam
+ser preenchidos e **o conjunto precisa de revisão jurídica** antes de valer
+como documento oficial.
 
 ---
 

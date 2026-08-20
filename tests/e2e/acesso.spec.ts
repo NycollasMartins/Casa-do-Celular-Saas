@@ -15,6 +15,7 @@ const ROTAS_PROTEGIDAS = [
   '/dashboard/lojas',
   '/dashboard/usuarios',
   '/dashboard/participacoes',
+  '/dashboard/privacidade',
   '/admin/franqueados',
 ];
 
@@ -88,12 +89,52 @@ test.describe('telas publicas', () => {
     await expect(alerta).not.toHaveText(/nao encontrad|nao existe|invalid user/i);
   });
 
-  test('recuperacao de senha responde sem confirmar se a conta existe', async ({ page }) => {
+  /**
+   * O SMTP do Supabase tem limite de taxa baixo, entao o envio pode falhar
+   * por motivo externo ao codigo. O que precisa valer sempre e o contrato
+   * com o usuario: alguma resposta aparece, o botao volta a funcionar, e
+   * nada revela se o e-mail esta cadastrado.
+   */
+  test('recuperacao de senha sempre responde e nunca confirma se a conta existe', async ({
+    page,
+  }) => {
     await page.goto('/auth/forgot-password');
     await page.getByLabel('E-mail').fill('qualquer@franqueado.com.br');
-    await page.getByRole('button', { name: 'Enviar link' }).click();
 
-    await expect(page.getByText(/Se a conta existir/i)).toBeVisible();
+    const botao = page.getByRole('button', { name: 'Enviar link' });
+    await botao.click();
+
+    // Sucesso ou falha temporaria — as duas mensagens sao neutras.
+    const resposta = page.getByText(
+      /Se a conta existir|Nao conseguimos concluir agora|Informe o e-mail/i
+    );
+    await expect(resposta).toBeVisible({ timeout: 15_000 });
+
+    // Regressao: sem teto de espera, o botao ficava desabilitado para sempre
+    // quando o SMTP demorava, e o usuario nao sabia se podia tentar de novo.
+    await expect(botao).toBeEnabled({ timeout: 15_000 });
+
+    await expect(page.locator('body')).not.toHaveText(/nao encontrad|nao existe|nao cadastrad/i);
+  });
+
+  /**
+   * A politica precisa ser alcancavel pelo titular dos dados, que nao tem
+   * conta no sistema. Se o middleware exigir sessao aqui, o direito do
+   * art. 18 fica inacessivel justamente para quem ele protege.
+   */
+  test('a politica de privacidade abre sem sessao', async ({ page }) => {
+    await page.goto('/privacidade');
+
+    await expect(page).toHaveURL(/\/privacidade$/);
+    await expect(page.getByRole('heading', { name: 'Politica de Privacidade' })).toBeVisible();
+    await expect(page.getByText(/Lei 13\.709/)).toBeVisible();
+  });
+
+  test('a politica lista os direitos do titular', async ({ page }) => {
+    await page.goto('/privacidade');
+
+    await expect(page.getByRole('heading', { name: 'Seus direitos' })).toBeVisible();
+    await expect(page.getByText(/Pedir a eliminacao dos seus dados/i)).toBeVisible();
   });
 
   test('a tela de cadastro explica que quem cria acesso e o franqueado', async ({ page }) => {

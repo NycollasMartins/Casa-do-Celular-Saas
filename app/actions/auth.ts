@@ -41,14 +41,35 @@ export async function enviarLinkDeRecuperacao(formData: FormData): Promise<Resul
   if (!email) return { sucesso: false, mensagem: 'Informe o e-mail da conta.' };
 
   const supabase = createClient();
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+
+  const envio = supabase.auth.resetPasswordForEmail(email, {
     // O link precisa cair na tela de definir senha. Mandar para /dashboard
     // apenas loga a pessoa e a senha antiga continua valendo.
     redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'}/auth/callback?next=/auth/nova-senha`,
   });
 
-  if (error) return { sucesso: false, mensagem: 'Nao foi possivel enviar o e-mail agora.' };
-  return { sucesso: true, mensagem: 'Se a conta existir, o link chega em instantes.' };
+  // O envio depende do SMTP do Supabase, que tem limite de taxa baixo e pode
+  // demorar. Sem teto, a promessa fica pendurada e o botao do formulario
+  // permanece em "carregando" para sempre: o usuario nao recebe resposta
+  // nenhuma e nao sabe se pode tentar de novo.
+  const ESPERA_MAXIMA_MS = 10_000;
+  const resultado = await Promise.race([
+    envio.then(({ error }) => (error ? ('erro' as const) : ('ok' as const))),
+    new Promise<'expirou'>((resolve) => setTimeout(() => resolve('expirou'), ESPERA_MAXIMA_MS)),
+  ]).catch(() => 'erro' as const);
+
+  // Mensagem condicional de proposito: confirmar o envio revelaria que a
+  // conta existe.
+  if (resultado === 'ok') {
+    return { sucesso: true, mensagem: 'Se a conta existir, o link chega em instantes.' };
+  }
+
+  // Nem "enviado" nem "conta inexistente" — apenas que nao deu para
+  // concluir. Continua sem revelar se o e-mail esta cadastrado.
+  return {
+    sucesso: false,
+    mensagem: 'Nao conseguimos concluir agora. Tente de novo em alguns minutos.',
+  };
 }
 
 /**

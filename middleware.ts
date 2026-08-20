@@ -3,6 +3,14 @@ import { atualizarSessao } from '@/lib/supabase/middleware';
 
 const ROTAS_PUBLICAS = ['/auth/login', '/auth/register', '/auth/forgot-password', '/auth/callback'];
 
+/**
+ * Abertas a todos: nao exigem sessao E nao redirecionam quem ja entrou.
+ * A politica de privacidade precisa ser alcancavel pelo titular dos dados,
+ * que normalmente nao tem conta no sistema — mandar quem esta logado para o
+ * dashboard ao clicar nela seria um beco sem saida.
+ */
+const ROTAS_ABERTAS = ['/privacidade'];
+
 /** Exige sessao, mas nao pode ser bloqueada pela troca de senha obrigatoria. */
 const ROTA_NOVA_SENHA = '/auth/nova-senha';
 
@@ -10,6 +18,9 @@ export async function middleware(request: NextRequest) {
   const { response, user } = await atualizarSessao(request);
   const { pathname } = request.nextUrl;
   const rotaPublica = ROTAS_PUBLICAS.some((rota) => pathname.startsWith(rota));
+  const rotaAberta = ROTAS_ABERTAS.some((rota) => pathname === rota || pathname.startsWith(`${rota}/`));
+
+  if (rotaAberta) return response;
 
   if (!user && !rotaPublica && pathname !== ROTA_NOVA_SENHA) {
     // Requisicao de dados recebe 401 em JSON; so navegacao vai para o login.

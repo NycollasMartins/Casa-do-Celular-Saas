@@ -2,10 +2,11 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
-import { buscarUsuarioAtual } from '@/lib/auth/session';
+import { buscarUsuarioAtual, podeGerenciarCadastros } from '@/lib/auth/session';
 import { agendamentoSchema, novoAgendamentoSchema } from '@/lib/validations/agendamento';
 import { calcularMetricas, buscarLojasDoUsuario } from '@/lib/supabase/queries';
 import type { FiltroMetricas } from '@/lib/types/metricas';
+import { camposAnonimizados, normalizarCpfParaBusca } from '@/lib/lgpd';
 
 export interface ResultadoAction {
   sucesso: boolean;
@@ -165,4 +166,89 @@ export async function buscarMetricas(filtros: FiltroMetricas = {}) {
 
 export async function listarLojasDoUsuario() {
   return buscarLojasDoUsuario();
+}
+
+/* ------------------------------- LGPD -------------------------------- */
+
+/**
+ * Atende ao pedido de eliminacao do titular (LGPD art. 18, VI).
+ *
+ * Anonimiza TODOS os agendamentos do CPF dentro do escopo que o usuario
+ * enxerga — o pedido do titular vale para todo o tratamento, nao para um
+ * registro isolado. O RLS limita naturalmente ao tenant e as lojas
+ * permitidas, sem precisarmos repetir a regra aqui.
+ *
+ * Restrito a quem gerencia: pedido de titular e responsabilidade do
+ * controlador, nao do operador de balcao.
+ */
+export async function anonimizarPorCpf(cpf: string): Promise<ResultadoAction & { total?: number }> {
+  const gestor = await buscarUsuarioAtual();
+  if (!gestor || !podeGerenciarCadastros(gestor.role)) {
+    return { sucesso: false, mensagem: 'Apenas o franqueado atende pedidos de titular.' };
+  }
+
+  const cpfFormatado = normalizarCpfParaBusca(cpf);
+  if (!cpfFormatado) {
+    return { sucesso: false, mensagem: 'Informe um CPF com 11 digitos.' };
+  }
+
+  const supabase = createClient();
+
+  const { data: alvos, error: erroBusca } = await supabase
+    .from('agendamentos')
+    .select('id')
+    .eq('cliente_cpf', cpfFormatado)
+    .is('anonimizado_em', null);
+
+  if (erroBusca) return { sucesso: false, mensagem: `Nao foi possivel consultar: ${erroBusca.message}` };
+  if (!alvos || alvos.length === 0) {
+    return { sucesso: false, mensagem: 'Nenhum registro com dados pessoais para este CPF.' };
+  }
+
+  const { error } = await supabase
+    .from('agendamentos')
+    .update(camposAnonimizados())
+    .in(
+      'id',
+      alvos.map((alvo) => alvo.id)
+    );
+
+  if (error) return { sucesso: false, mensagem: `Nao foi possivel anonimizar: ${error.message}` };
+
+  revalidatePath('/dashboard/agendamentos');
+  revalidatePath('/dashboard/privacidade');
+  revalidatePath('/dashboard');
+
+  return {
+    sucesso: true,
+    total: alvos.length,
+    mensagem: `${alvos.length} registro(s) anonimizado(s). A acao nao pode ser desfeita.`,
+  };
+}
+
+/** Quantos registros o CPF tem, para a tela confirmar antes de anonimizar. */
+export async function contarRegistrosDoCpf(
+  cpf: string
+): Promise<{ total: number; anonimizados: number; erro?: string }> {
+  const gestor = await buscarUsuarioAtual();
+  if (!gestor || !podeGerenciarCadastros(gestor.role)) {
+    return { total: 0, anonimizados: 0, erro: 'Sem permissao.' };
+  }
+
+  const cpfFormatado = normalizarCpfParaBusca(cpf);
+  if (!cpfFormatado) return { total: 0, anonimizados: 0, erro: 'Informe um CPF com 11 digitos.' };
+
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('agendamentos')
+    .select('anonimizado_em')
+    .eq('cliente_cpf', cpfFormatado);
+
+  if (error) return { total: 0, anonimizados: 0, erro: error.message };
+
+  const linhas = data ?? [];
+  return {
+    total: linhas.length,
+    anonimizados: linhas.filter((linha) => linha.anonimizado_em !== null).length,
+  };
 }
