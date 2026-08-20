@@ -21,6 +21,7 @@ franqueados com 10 a 80 lojas cada, sem reescrita.
 - [Como o RLS funciona](#como-o-rls-funciona)
 - [Testando as permissões](#testando-as-permissões)
 - [Estrutura de pastas](#estrutura-de-pastas)
+- [Testes](#testes)
 - [Deploy](#deploy)
 - [Decisões de projeto](#decisões-de-projeto)
 - [Roadmap](#roadmap)
@@ -116,7 +117,7 @@ Abra `http://localhost:3000`. Sem sessão, o middleware manda para
 
 ## Banco de dados
 
-A ordem importa. São cinco passos:
+A ordem importa. São seis passos:
 
 **1. Schema** — no SQL Editor do Supabase, cole e execute
 `supabase/migrations/`.
@@ -145,6 +146,15 @@ clara se você pular o passo 3.
 Adiciona `usuarios.status` e passa a filtrar usuário inativo nas funções de
 permissão. É o que permite desligar alguém pela tela de *Equipe* sem apagar
 o histórico de agendamentos que a pessoa registrou.
+
+**6. Proteção dos campos sensíveis** — execute
+`supabase/migrations/20250101000004_protege_campos_sensiveis.sql`.
+Corrige uma escalada de privilégio: a policy `usuarios_update` liberava a
+própria linha sem restringir coluna, então qualquer usuário podia rodar
+`update usuarios set role = 'franqueado' where id = auth.uid()` e passar a
+enxergar o tenant inteiro. Um trigger `BEFORE UPDATE` passa a comparar OLD e
+NEW e bloquear mudança de `role`, `franqueado_id` e `status` por quem não
+gerencia. **Não pule este passo.**
 
 ### Tabelas
 
@@ -259,6 +269,31 @@ scripts/              seed-auth-users.mjs
 
 ---
 
+## Testes
+
+```bash
+npm test           # tudo
+npm run test:unit  # so a logica pura, sem banco
+npm run test:rls   # so as permissoes, precisa do seed
+```
+
+**Unitários** cobrem validação de CPF pelo dígito verificador, máscaras,
+schemas e o rate limit em memória. Rodam em qualquer lugar, sem rede.
+
+**RLS** autenticam como os usuários reais do seed, usando a *anon key*, e
+conferem o que cada papel enxerga e o que consegue gravar. Nunca usam a
+service role — ela ignora RLS, que é justamente o que se quer exercitar.
+Cobrem visibilidade por papel, negação de escrita cruzada entre lojas e a
+regressão da escalada de privilégio corrigida em
+`20250101000004_protege_campos_sensiveis.sql`.
+
+As suítes de RLS **se pulam sozinhas** quando os usuários do seed não
+existem, em vez de falharem em vermelho. É uma trava proposital: impede que
+alguém aponte o `.env.local` para produção e saia escrevendo. Para rodá-las,
+execute antes `npm run seed:auth` e a migration de seed.
+
+---
+
 ## Deploy
 
 **Supabase:** crie o projeto, rode as migrations na ordem acima e ative
@@ -297,10 +332,12 @@ um franqueado de 80 — cabe em memória com folga. Se a rede inteira crescer
 muito, troque `calcularMetricas` por uma RPC que agrega no Postgres; o resto
 do código não muda.
 
-**Rate limit em memória.** Os 100 req/min por usuário funcionam, mas na
-Vercel cada instância tem o próprio contador. Isso segura abuso acidental,
-não um ataque coordenado. Para produção séria, Upstash Redis ou o WAF da
-Vercel. Está comentado em `lib/rate-limit.ts`.
+**Rate limit com duas implementações.** Os 100 req/min por usuário usam
+Upstash Redis quando `UPSTASH_REDIS_REST_URL` e `UPSTASH_REDIS_REST_TOKEN`
+existem, e caem para um contador em memória quando não. O fallback também
+cobre o Redis fora do ar: o sistema degrada em vez de parar. Em memória o
+contador vale por instância, então segura engano de usuário, não ataque
+coordenado — defina as duas variáveis antes de ir a produção.
 
 **Sem auto-cadastro.** Toda conta pertence a um franqueado e precisa de papel
 e loja definidos. Quem cria é o franqueado, em *Equipe*, com senha

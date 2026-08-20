@@ -16,7 +16,7 @@ export async function autenticarRequisicao(
     return { erro: NextResponse.json({ erro: 'Nao autenticado' }, { status: 401 }) };
   }
 
-  const limite = verificarRateLimit(`${usuario.id}:${rota}`);
+  const limite = await verificarRateLimit(`${usuario.id}:${rota}`);
   if (!limite.permitido) {
     return {
       erro: NextResponse.json(
