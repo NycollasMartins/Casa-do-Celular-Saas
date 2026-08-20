@@ -34,6 +34,25 @@ export const usuarioEdicaoSchema = z.object({
   percentual_participacao: z.coerce.number().min(0.01).max(100).optional(),
 });
 
+/** Abertura de participacao societaria. */
+export const participacaoSchema = z.object({
+  usuario_id: z.string().uuid('Escolha a pessoa'),
+  loja_id: z.string().uuid('Escolha a loja'),
+  percentual_participacao: z.coerce
+    .number()
+    .min(0.01, 'Informe um percentual maior que zero')
+    .max(100, 'O percentual nao pode passar de 100'),
+  cargo: z.enum(['franqueado', 'diretor']),
+  data_inicio: z.string().optional().or(z.literal('')),
+});
+
+/** Transferencia: a origem vem pelo id, aqui vai so o destino. */
+export const transferenciaSchema = z.object({
+  loja_id: z.string().uuid('Escolha a loja de destino'),
+  percentual_participacao: z.coerce.number().min(0.01).max(100).optional(),
+  data_inicio: z.string().optional().or(z.literal('')),
+});
+
 export const franqueadoSchema = z.object({
   nome: z.string().trim().min(3, 'Informe a razao social'),
   cnpj: z
@@ -51,4 +70,6 @@ export const franqueadoSchema = z.object({
 export type LojaInput = z.infer<typeof lojaSchema>;
 export type UsuarioInput = z.infer<typeof usuarioSchema>;
 export type UsuarioEdicaoInput = z.infer<typeof usuarioEdicaoSchema>;
+export type ParticipacaoInput = z.infer<typeof participacaoSchema>;
+export type TransferenciaInput = z.infer<typeof transferenciaSchema>;
 export type FranqueadoInput = z.infer<typeof franqueadoSchema>;

@@ -1,4 +1,5 @@
 import { LojaSelector } from '@/components/dashboard/loja-selector';
+import { ExportarCsv } from '@/components/dashboard/exportar-csv';
 import { PeriodoSelector } from '@/components/dashboard/periodo-selector';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -38,9 +39,12 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Desempenho por loja</CardTitle>
-          <CardDescription>Ordenado pelo volume de contatos</CardDescription>
+        <CardHeader className="flex-row items-start justify-between gap-4">
+          <div className="space-y-1">
+            <CardTitle>Desempenho por loja</CardTitle>
+            <CardDescription>Ordenado pelo volume de contatos</CardDescription>
+          </div>
+          <ExportarCsv tipo="lojas" vazio={porLoja.length === 0} />
         </CardHeader>
         <CardContent className="px-0">
           <Table>
@@ -81,9 +85,12 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Ranking de agendadores</CardTitle>
-          <CardDescription>Conversao de contato em visita agendada</CardDescription>
+        <CardHeader className="flex-row items-start justify-between gap-4">
+          <div className="space-y-1">
+            <CardTitle>Ranking de agendadores</CardTitle>
+            <CardDescription>Conversao de contato em visita agendada</CardDescription>
+          </div>
+          <ExportarCsv tipo="agendadores" vazio={metricas.dadosPorAgendador.length === 0} />
         </CardHeader>
         <CardContent className="px-0">
           <Table>

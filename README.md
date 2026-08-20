@@ -343,6 +343,18 @@ coordenado — defina as duas variáveis antes de ir a produção.
 e loja definidos. Quem cria é o franqueado, em *Equipe*, com senha
 provisória.
 
+**CSV pensado para o Excel em português.** BOM UTF-8, separador ponto e
+vírgula e decimal com vírgula. Sem isso o Excel pt-BR abre o arquivo numa
+coluna só e com os acentos quebrados. Células iniciadas por `=`, `+`, `-` ou
+`@` levam apóstrofo na frente: o nome do cliente vem de entrada do usuário e
+o Excel executa fórmula ao abrir o arquivo.
+
+**Transferência de participação abre antes de encerrar.** Não há transação
+entre chamadas do PostgREST, então a ordem foi escolhida pelo modo de
+falhar: abre no destino e, se o encerramento da origem falhar, desfaz a
+abertura. O pior estado possível é "continua na origem", nunca "perdeu as
+duas".
+
 **CPF validado com o algoritmo oficial**, no servidor. A máscara só formata;
 `111.111.111-11` passa no regex e é rejeitado no dígito verificador.
 
@@ -358,8 +370,8 @@ Próximos passos naturais, na ordem em que costumam doer:
    contato; o ideal é o registro nascer da conversa.
 3. **Notificação de véspera** — lembrete automático para o cliente que
    agendou, atacando direto o não comparecimento.
-4. **Histórico de participação societária** — a tabela já suporta `data_fim`;
-   falta a tela para encerrar e transferir participações.
+4. ~~**Histórico de participação societária**~~ — feito. A tela *Societário*
+   encerra e transfere participações preservando o histórico.
 5. **Exportação agendada** — relatório semanal por e-mail para o franqueado.
 6. **Registro de venda** — fechar o funil de contato até faturamento, hoje o
    sistema para no comparecimento.

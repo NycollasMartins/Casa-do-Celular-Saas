@@ -7,6 +7,8 @@ import { buscarUsuarioAtual, podeGerenciarCadastros } from '@/lib/auth/session';
 import {
   franqueadoSchema,
   lojaSchema,
+  participacaoSchema,
+  transferenciaSchema,
   usuarioEdicaoSchema,
   usuarioSchema,
 } from '@/lib/validations/cadastros';
@@ -340,4 +342,181 @@ export async function salvarFranqueado(formData: FormData, id?: string): Promise
 
   revalidatePath('/admin/franqueados');
   return { sucesso: true, mensagem: id ? 'Franqueado atualizado.' : 'Franqueado criado.' };
+}
+
+/* ---------------------- Participacao societaria ---------------------- */
+
+/**
+ * As tabelas ja suportavam vigencia (`data_fim`) e o RLS ja filtrava por
+ * participacao ativa desde o inicio — faltava a tela. Sem ela, um diretor
+ * que saia da sociedade continuava enxergando as lojas, porque a regra
+ * existia no banco e nao tinha como ser acionada.
+ *
+ * Encerrar preserva a linha: e o que mantem a leitura historica de quem
+ * respondia por qual loja em cada periodo.
+ */
+export async function encerrarParticipacao(id: string, dataFim?: string): Promise<ResultadoAction> {
+  const gestor = await buscarUsuarioAtual();
+  if (!gestor || !podeGerenciarCadastros(gestor.role)) {
+    return { sucesso: false, mensagem: 'Voce nao tem permissao para gerenciar participacoes.' };
+  }
+
+  const supabase = createClient();
+  const { data: atual, error: erroLeitura } = await supabase
+    .from('participacoes_societarias')
+    .select('id, data_inicio, data_fim')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (erroLeitura || !atual) return { sucesso: false, mensagem: 'Participacao nao encontrada.' };
+  if (atual.data_fim) return { sucesso: false, mensagem: 'Esta participacao ja esta encerrada.' };
+
+  const fim = dataFim || hoje();
+
+  // A constraint participacao_periodo_valido rejeitaria no banco; avisar
+  // aqui devolve mensagem legivel em vez de erro de constraint.
+  if (fim < atual.data_inicio) {
+    return {
+      sucesso: false,
+      mensagem: 'A data de encerramento nao pode ser anterior ao inicio da participacao.',
+      erros: { data_fim: ['Anterior ao inicio'] },
+    };
+  }
+
+  const { error } = await supabase
+    .from('participacoes_societarias')
+    .update({ data_fim: fim })
+    .eq('id', id);
+
+  if (error) return { sucesso: false, mensagem: `Nao foi possivel encerrar: ${error.message}` };
+
+  revalidatePath('/dashboard/participacoes');
+  revalidatePath('/dashboard');
+  return { sucesso: true, mensagem: 'Participacao encerrada.' };
+}
+
+/**
+ * Abre uma participacao. O indice `participacoes_ativa_unica` e parcial
+ * (`where data_fim is null`), entao a mesma dupla usuario/loja pode voltar
+ * depois de encerrada — o que torna a transferencia de volta possivel.
+ */
+export async function criarParticipacao(formData: FormData): Promise<ResultadoAction> {
+  const gestor = await buscarUsuarioAtual();
+  if (!gestor || !podeGerenciarCadastros(gestor.role)) {
+    return { sucesso: false, mensagem: 'Voce nao tem permissao para gerenciar participacoes.' };
+  }
+
+  const parsed = participacaoSchema.safeParse(objeto(formData));
+  if (!parsed.success) {
+    return { sucesso: false, mensagem: 'Revise os campos.', erros: parsed.error.flatten().fieldErrors };
+  }
+  const dados = parsed.data;
+
+  const supabase = createClient();
+  const { error } = await supabase.from('participacoes_societarias').insert({
+    usuario_id: dados.usuario_id,
+    loja_id: dados.loja_id,
+    percentual_participacao: dados.percentual_participacao,
+    cargo: dados.cargo,
+    data_inicio: dados.data_inicio || hoje(),
+  });
+
+  if (error) {
+    const duplicado = error.code === '23505';
+    return {
+      sucesso: false,
+      mensagem: duplicado
+        ? 'Esta pessoa ja tem participacao ativa nesta loja. Encerre a atual antes de abrir outra.'
+        : `Nao foi possivel salvar: ${error.message}`,
+    };
+  }
+
+  revalidatePath('/dashboard/participacoes');
+  revalidatePath('/dashboard');
+  return { sucesso: true, mensagem: 'Participacao aberta.' };
+}
+
+/**
+ * Transferencia: encerra na loja de origem e abre na de destino, na mesma
+ * data. Os dois passos precisam andar juntos — encerrar sem abrir tira o
+ * acesso do diretor, e abrir sem encerrar o deixa somando participacao em
+ * duas lojas.
+ *
+ * Nao ha transacao entre chamadas do PostgREST, entao a ordem escolhida e a
+ * que falha de forma segura: abre primeiro e, se o encerramento falhar,
+ * desfaz a abertura. O estado ruim possivel e "continua na origem", nunca
+ * "perdeu as duas".
+ */
+export async function transferirParticipacao(
+  id: string,
+  formData: FormData
+): Promise<ResultadoAction> {
+  const gestor = await buscarUsuarioAtual();
+  if (!gestor || !podeGerenciarCadastros(gestor.role)) {
+    return { sucesso: false, mensagem: 'Voce nao tem permissao para gerenciar participacoes.' };
+  }
+
+  const parsed = transferenciaSchema.safeParse(objeto(formData));
+  if (!parsed.success) {
+    return { sucesso: false, mensagem: 'Revise os campos.', erros: parsed.error.flatten().fieldErrors };
+  }
+  const dados = parsed.data;
+
+  const supabase = createClient();
+  const { data: origem } = await supabase
+    .from('participacoes_societarias')
+    .select('id, usuario_id, loja_id, cargo, percentual_participacao, data_inicio, data_fim')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (!origem) return { sucesso: false, mensagem: 'Participacao de origem nao encontrada.' };
+  if (origem.data_fim) return { sucesso: false, mensagem: 'Esta participacao ja esta encerrada.' };
+  if (origem.loja_id === dados.loja_id) {
+    return { sucesso: false, mensagem: 'A loja de destino e a mesma da origem.' };
+  }
+
+  const data = dados.data_inicio || hoje();
+  if (data < origem.data_inicio) {
+    return {
+      sucesso: false,
+      mensagem: 'A data da transferencia nao pode ser anterior ao inicio da participacao.',
+      erros: { data_inicio: ['Anterior ao inicio'] },
+    };
+  }
+
+  const { data: aberta, error: erroAbertura } = await supabase
+    .from('participacoes_societarias')
+    .insert({
+      usuario_id: origem.usuario_id,
+      loja_id: dados.loja_id,
+      percentual_participacao: dados.percentual_participacao ?? origem.percentual_participacao,
+      cargo: origem.cargo,
+      data_inicio: data,
+    })
+    .select('id')
+    .single();
+
+  if (erroAbertura || !aberta) {
+    const duplicado = erroAbertura?.code === '23505';
+    return {
+      sucesso: false,
+      mensagem: duplicado
+        ? 'Ja existe participacao ativa na loja de destino.'
+        : `Nao foi possivel abrir na loja de destino: ${erroAbertura?.message}`,
+    };
+  }
+
+  const { error: erroEncerramento } = await supabase
+    .from('participacoes_societarias')
+    .update({ data_fim: data })
+    .eq('id', id);
+
+  if (erroEncerramento) {
+    await supabase.from('participacoes_societarias').delete().eq('id', aberta.id);
+    return { sucesso: false, mensagem: `Nao foi possivel encerrar a origem: ${erroEncerramento.message}` };
+  }
+
+  revalidatePath('/dashboard/participacoes');
+  revalidatePath('/dashboard');
+  return { sucesso: true, mensagem: 'Participacao transferida.' };
 }

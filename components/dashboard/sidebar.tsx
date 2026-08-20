@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   Building2,
   CalendarDays,
+  Handshake,
   LayoutDashboard,
   LineChart,
   Store,
@@ -41,6 +42,12 @@ export const ITENS_NAVEGACAO: ItemNav[] = [
   },
   { href: '/dashboard/lojas', label: 'Lojas', icone: Store, roles: ['super_admin', 'franqueado'] },
   { href: '/dashboard/usuarios', label: 'Equipe', icone: Users, roles: ['super_admin', 'franqueado'] },
+  {
+    href: '/dashboard/participacoes',
+    label: 'Societario',
+    icone: Handshake,
+    roles: ['super_admin', 'franqueado'],
+  },
   { href: '/admin/franqueados', label: 'Franqueados', icone: Building2, roles: ['super_admin'] },
 ];
 
