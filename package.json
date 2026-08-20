@@ -16,7 +16,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "lgpd:reter": "node scripts/anonimizar-antigos.mjs",
-    "lembrete:vespera": "node scripts/lembrete-vespera.mjs"
+    "lembrete:vespera": "node scripts/lembrete-vespera.mjs",
+    "relatorio:semanal": "node scripts/relatorio-semanal.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

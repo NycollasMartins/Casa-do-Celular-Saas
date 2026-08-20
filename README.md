@@ -26,6 +26,7 @@ franqueados com 10 a 80 lojas cada, sem reescrita.
 - [Lembrete de véspera](#lembrete-de-véspera)
 - [Registro de venda](#registro-de-venda)
 - [Metas por agendador](#metas-por-agendador)
+- [Relatório semanal](#relatório-semanal)
 - [Deploy](#deploy)
 - [Decisões de projeto](#decisões-de-projeto)
 - [Roadmap](#roadmap)
@@ -121,7 +122,7 @@ Abra `http://localhost:3000`. Sem sessão, o middleware manda para
 
 ## Banco de dados
 
-A ordem importa. São dez passos:
+A ordem importa. São onze passos:
 
 **1. Schema** — no SQL Editor do Supabase, cole e execute
 `supabase/migrations/`.
@@ -178,6 +179,11 @@ atendimento sem comparecimento confirmado.
 Metas mensais por agendador, com alvos opcionais de agendamentos, conversão,
 vendas e faturamento.
 
+**11. Relatório semanal** — execute
+`supabase/migrations/20250101000009_relatorio_semanal.sql`.
+Cria a tabela de controle de envio e a função que agrega o resumo do
+período.
+
 ### Tabelas
 
 | Tabela | Papel |
@@ -190,6 +196,7 @@ vendas e faturamento.
 | `notificacoes` | Registro de lembrete enviado. Não guarda telefone nem e-mail. |
 | `vendas` | Fecha o funil. Uma por agendamento, só onde houve comparecimento. |
 | `metas` | Alvo mensal por agendador. Uma por pessoa e competência. |
+| `envios_relatorio` | Controle do relatório semanal. Uma linha por franqueado e semana. |
 | `agendamentos` | Tabela de fato. `franqueado_id` desnormalizado para filtrar por tenant sem join. |
 
 ---
@@ -488,6 +495,39 @@ instrumento de cobrança em vez de direção.
 
 ---
 
+## Relatório semanal
+
+O franqueado não abre o sistema todo dia. O resumo semanal leva o número até
+ele — e, quando algo destoa, ele entra para investigar.
+
+```bash
+npm run relatorio:semanal             # semana fechada anterior
+npm run relatorio:semanal -- --seco   # só mostra, não envia
+npm run relatorio:semanal -- --semana 2026-08-10
+```
+
+Feito para rodar toda segunda-feira de manhã.
+
+**A semana é de segunda a domingo**, como o comércio brasileiro conta — não
+de domingo a sábado, que é o padrão do `getDay()` do JavaScript. Trocar um
+pelo outro desloca o relatório em um dia e faz a segunda-feira aparecer no
+resumo da semana errada.
+
+**O e-mail leva os números e um link**, não um CSV anexado. O franqueado
+clica e vê dado fresco, com os filtros da tela — e a lógica de CSV, que é
+testada em `lib/csv.ts`, não precisa ser duplicada dentro de um script
+`.mjs`.
+
+**A agregação fica no banco**, numa função SQL, não em JavaScript. As
+métricas da aplicação são calculadas em JS porque a tela já carregou os
+registros; uma rotina em lote não tem essa leitura na mão, e trazer milhares
+de linhas para somar quatro números seria desperdício.
+
+Franqueado sem movimento na semana não recebe e-mail: relatório vazio treina
+o destinatário a ignorar a mensagem.
+
+---
+
 ## Deploy
 
 **Supabase:** crie o projeto, rode as migrations na ordem acima e ative
@@ -583,5 +623,6 @@ Próximos passos naturais, na ordem em que costumam doer:
    e agendar a rotina; a lógica e a idempotência estão prontas.
 4. ~~**Histórico de participação societária**~~ — feito. A tela *Societário*
    encerra e transfere participações preservando o histórico.
-5. **Exportação agendada** — relatório semanal por e-mail para o franqueado.
+5. ~~**Exportação agendada**~~ — feito. Resumo semanal por e-mail, com link
+   para o relatório ao vivo.
 6. ~~**Registro de venda**~~ — feito. O funil vai de contato a faturamento.
