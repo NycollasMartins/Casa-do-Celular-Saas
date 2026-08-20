@@ -366,8 +366,25 @@ Depois de publicar, volte ao Supabase e adicione a URL de produção em
 *Authentication → URL Configuration → Redirect URLs*, senão o link de
 recuperação de senha volta para `localhost`.
 
-**Monitoramento:** Vercel Analytics para performance, Supabase Logs para as
-queries. Sentry é opcional e vale a pena quando entrar mais gente.
+**Monitoramento:** Sentry já está integrado e fica **inerte sem DSN** — sem
+`NEXT_PUBLIC_SENTRY_DSN` nada é inicializado e nenhuma requisição sai da
+aplicação. Para ligar, preencha as variáveis do `.env.example`.
+
+Dois cuidados na configuração, ambos por causa do CPF de cliente final:
+`sendDefaultPii` está desligado, e um `beforeSend` remove CPF e telefone de
+qualquer texto do evento antes do envio — inclusive de URL em breadcrumb e
+de corpo de server action. Replay só é gravado depois de um erro, nunca a
+sessão inteira, que capturaria dados digitados em tela.
+
+A rota `/monitoring` é o túnel do Sentry e está liberada no middleware. Sem
+isso, o relatório de erro seria redirecionado para o login e nunca chegaria
+— e o erro mais importante de capturar é justamente o de quem não conseguiu
+autenticar.
+
+O middleware cresce de ~86 kB para ~133 kB com o SDK de borda incluído. Está
+bem abaixo do limite da Vercel e da Netlify, mas é custo real em cold start.
+
+Supabase Logs continua sendo o lugar das queries.
 
 ---
 

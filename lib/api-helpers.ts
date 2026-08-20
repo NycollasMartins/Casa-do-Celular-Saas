@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { buscarUsuarioAtual } from '@/lib/auth/session';
 import { verificarRateLimit } from '@/lib/rate-limit';
 import type { Usuario } from '@/lib/types/database';
@@ -30,6 +31,9 @@ export async function autenticarRequisicao(
 }
 
 export function erroServidor(excecao: unknown) {
+  // Sem DSN configurado isto e um no-op; o comportamento da rota nao muda.
+  Sentry.captureException(excecao);
+
   const mensagem = excecao instanceof Error ? excecao.message : 'Erro inesperado';
   return NextResponse.json({ erro: mensagem }, { status: 500 });
 }

@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
+import * as Sentry from '@sentry/nextjs';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -20,7 +21,9 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Aqui entra o Sentry quando for configurado (P1 do plano).
+    // Sem DSN configurado o capture nao envia nada — o console segue sendo
+    // o unico destino em desenvolvimento.
+    Sentry.captureException(error);
     console.error('[erro de rota]', error);
   }, [error]);
 

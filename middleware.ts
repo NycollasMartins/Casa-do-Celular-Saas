@@ -9,7 +9,14 @@ const ROTAS_PUBLICAS = ['/auth/login', '/auth/register', '/auth/forgot-password'
  * que normalmente nao tem conta no sistema — mandar quem esta logado para o
  * dashboard ao clicar nela seria um beco sem saida.
  */
-const ROTAS_ABERTAS = ['/privacidade'];
+const ROTAS_ABERTAS = [
+  '/privacidade',
+  // Tunel do Sentry (tunnelRoute). Se o middleware exigisse sessao aqui, o
+  // relatorio de erro seria redirecionado para o login e nunca chegaria —
+  // e o erro mais importante de capturar e justamente o de quem nao
+  // conseguiu autenticar.
+  '/monitoring',
+];
 
 /** Exige sessao, mas nao pode ser bloqueada pela troca de senha obrigatoria. */
 const ROTA_NOVA_SENHA = '/auth/nova-senha';

@@ -1,5 +1,8 @@
 'use client';
 
+import { useEffect } from 'react';
+import * as Sentry from '@sentry/nextjs';
+
 /**
  * Ultima linha de defesa: pega erros do proprio layout raiz, que o
  * app/error.tsx nao alcanca. Substitui <html> e <body>, entao nao pode
@@ -12,6 +15,10 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useEffect(() => {
+    Sentry.captureException(error);
+  }, [error]);
+
   return (
     <html lang="pt-BR">
       <body
