@@ -3,10 +3,12 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+import { novaSenhaSchema } from '@/lib/validations/auth';
 
 export interface ResultadoAuth {
   sucesso: boolean;
   mensagem?: string;
+  erros?: Record<string, string[] | undefined>;
 }
 
 export async function entrar(formData: FormData): Promise<ResultadoAuth> {
@@ -40,9 +42,55 @@ export async function enviarLinkDeRecuperacao(formData: FormData): Promise<Resul
 
   const supabase = createClient();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'}/auth/callback?next=/dashboard`,
+    // O link precisa cair na tela de definir senha. Mandar para /dashboard
+    // apenas loga a pessoa e a senha antiga continua valendo.
+    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'}/auth/callback?next=/auth/nova-senha`,
   });
 
   if (error) return { sucesso: false, mensagem: 'Nao foi possivel enviar o e-mail agora.' };
   return { sucesso: true, mensagem: 'Se a conta existir, o link chega em instantes.' };
+}
+
+/**
+ * Define a senha definitiva. Serve tanto para a recuperacao por e-mail
+ * quanto para a troca obrigatoria do primeiro acesso — nos dois casos ja
+ * existe sessao ativa quando o formulario e enviado.
+ *
+ * Limpar `senha_provisoria` e o que libera o usuario do bloqueio aplicado
+ * pelo middleware.
+ */
+export async function definirNovaSenha(formData: FormData): Promise<ResultadoAuth> {
+  const parsed = novaSenhaSchema.safeParse({
+    senha: String(formData.get('senha') ?? ''),
+    confirmacao: String(formData.get('confirmacao') ?? ''),
+  });
+
+  if (!parsed.success) {
+    return { sucesso: false, mensagem: 'Revise os campos.', erros: parsed.error.flatten().fieldErrors };
+  }
+
+  const supabase = createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { sucesso: false, mensagem: 'Sessao expirada. Peca um novo link.' };
+
+  const { error } = await supabase.auth.updateUser({
+    password: parsed.data.senha,
+    data: { senha_provisoria: false },
+  });
+
+  if (error) {
+    // O Supabase recusa reutilizar a senha atual; vale dizer isso em vez de
+    // repetir a mensagem generica.
+    const mesmaSenha = error.message.toLowerCase().includes('different from the old');
+    return {
+      sucesso: false,
+      mensagem: mesmaSenha ? 'A nova senha precisa ser diferente da atual.' : 'Nao foi possivel salvar a senha.',
+    };
+  }
+
+  revalidatePath('/', 'layout');
+  return { sucesso: true, mensagem: 'Senha atualizada.' };
 }

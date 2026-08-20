@@ -91,7 +91,8 @@ export async function criarUsuario(formData: FormData): Promise<ResultadoAction>
     email: dados.email,
     password: senhaProvisoria,
     email_confirm: true,
-    user_metadata: { nome: dados.nome },
+    // `senha_provisoria` obriga a troca no primeiro acesso (ver middleware).
+    user_metadata: { nome: dados.nome, senha_provisoria: true },
   });
 
   if (erroAuth || !criado.user) {
