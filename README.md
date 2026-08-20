@@ -346,6 +346,25 @@ usuários do seed não existem, em vez de falharem em vermelho. É uma trava pro
 alguém aponte o `.env.local` para produção e saia escrevendo. Para rodá-las,
 execute antes `npm run seed:auth` e a migration de seed.
 
+### Verificação local das migrations
+
+```bash
+npm run verificar:banco
+```
+
+Cria um banco descartável no PostgreSQL local, reproduz o que o Supabase
+fornece (schema `auth`, `auth.uid()`, os papéis), aplica **todas** as
+migrations na ordem, popula o seed e roda 16 asserções de RLS impersonando
+cada papel — inclusive a tentativa de escalada de privilégio.
+
+Existe porque migrations só chegam ao banco quando alguém cola no SQL
+Editor. Entre escrever e aplicar, erro de SQL não aparece, e uma migration
+quebrada se revela em produção, no pior momento possível. Requer apenas
+`brew install postgresql@16`.
+
+Não substitui `npm run test:rls`, que exercita também o PostgREST e o
+GoTrue. Cobre a camada onde a segurança de fato mora.
+
 ### Integracao continua
 
 `.github/workflows/ci.yml` roda a cada push na `main` e em cada pull request:

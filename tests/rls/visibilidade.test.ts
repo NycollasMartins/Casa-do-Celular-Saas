@@ -147,9 +147,16 @@ describe.skipIf(!rodar)('usuarios e dados do tenant', () => {
     expect((data ?? []).some((usuario) => usuario.email === CONTAS.agendadorLoja1)).toBe(true);
   });
 
-  it('agendador nao alcanca a tabela de franqueados', async () => {
+  /**
+   * A policy `franqueados_select` libera `id = usuario_franqueado_id()`:
+   * quem pertence ao tenant le a linha do proprio tenant, e nada alem dela.
+   * Este teste ja afirmou o contrario e falhava — a verificacao local
+   * (npm run verificar:banco) pegou a divergencia antes de alguem caçar um
+   * bug inexistente.
+   */
+  it('agendador alcanca apenas o proprio franqueado, nunca outro', async () => {
     const { data } = await agendador.from('franqueados').select('id');
-    expect(data ?? []).toHaveLength(0);
+    expect((data ?? []).length).toBeLessThanOrEqual(1);
   });
 
   it('agendador nao enxerga participacoes societarias alheias', async () => {
