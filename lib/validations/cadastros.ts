@@ -23,6 +23,17 @@ export const usuarioSchema = z.object({
   percentual_participacao: z.coerce.number().min(0.01).max(100).optional(),
 });
 
+/**
+ * Edicao de usuario. Sem `email`: trocar o e-mail mexe em auth.users e
+ * dispara reconfirmacao — e um fluxo proprio, nao um campo de formulario.
+ */
+export const usuarioEdicaoSchema = z.object({
+  nome: z.string().trim().min(3, 'Informe o nome'),
+  role: z.enum(['franqueado', 'diretor', 'agendador']),
+  loja_id: z.string().uuid().optional(),
+  percentual_participacao: z.coerce.number().min(0.01).max(100).optional(),
+});
+
 export const franqueadoSchema = z.object({
   nome: z.string().trim().min(3, 'Informe a razao social'),
   cnpj: z
@@ -39,4 +50,5 @@ export const franqueadoSchema = z.object({
 
 export type LojaInput = z.infer<typeof lojaSchema>;
 export type UsuarioInput = z.infer<typeof usuarioSchema>;
+export type UsuarioEdicaoInput = z.infer<typeof usuarioEdicaoSchema>;
 export type FranqueadoInput = z.infer<typeof franqueadoSchema>;

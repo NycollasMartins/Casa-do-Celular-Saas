@@ -4,7 +4,12 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { buscarUsuarioAtual, podeGerenciarCadastros } from '@/lib/auth/session';
-import { franqueadoSchema, lojaSchema, usuarioSchema } from '@/lib/validations/cadastros';
+import {
+  franqueadoSchema,
+  lojaSchema,
+  usuarioEdicaoSchema,
+  usuarioSchema,
+} from '@/lib/validations/cadastros';
 import type { ResultadoAction } from './agendamentos';
 
 function objeto(formData: FormData): Record<string, string> {
@@ -132,6 +137,176 @@ export async function criarUsuario(formData: FormData): Promise<ResultadoAction>
 
   revalidatePath('/dashboard/usuarios');
   return { sucesso: true, mensagem: `Usuario criado. Senha provisoria: ${senhaProvisoria}` };
+}
+
+/** Data de hoje em ISO curto, formato aceito pelas colunas `date`. */
+function hoje(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Atualiza nome, papel e lotacao. Escreve pelo cliente normal de proposito:
+ * o RLS confere se o gestor pode mexer neste usuario e nesta loja, em vez de
+ * confiarmos so na checagem de papel feita aqui em cima.
+ *
+ * Trocar de loja nao apaga o vinculo antigo — fecha com `data_fim` e abre um
+ * novo. E o que preserva a leitura historica de quem respondia por qual loja.
+ */
+export async function atualizarUsuario(id: string, formData: FormData): Promise<ResultadoAction> {
+  const gestor = await buscarUsuarioAtual();
+  if (!gestor || !podeGerenciarCadastros(gestor.role)) {
+    return { sucesso: false, mensagem: 'Voce nao tem permissao para editar usuarios.' };
+  }
+
+  const parsed = usuarioEdicaoSchema.safeParse(objeto(formData));
+  if (!parsed.success) {
+    return { sucesso: false, mensagem: 'Revise os campos.', erros: parsed.error.flatten().fieldErrors };
+  }
+  const dados = parsed.data;
+
+  if (dados.role === 'agendador' && !dados.loja_id) {
+    return { sucesso: false, mensagem: 'Escolha a loja do agendador.', erros: { loja_id: ['Campo obrigatorio'] } };
+  }
+
+  const supabase = createClient();
+
+  const { error: erroPerfil } = await supabase
+    .from('usuarios')
+    .update({ nome: dados.nome, role: dados.role })
+    .eq('id', id);
+
+  if (erroPerfil) return { sucesso: false, mensagem: `Nao foi possivel salvar: ${erroPerfil.message}` };
+
+  if (dados.loja_id) {
+    if (dados.role === 'agendador') {
+      const { data: vinculo } = await supabase
+        .from('agendadores_lojas')
+        .select('id, loja_id')
+        .eq('usuario_id', id)
+        .is('data_fim', null)
+        .maybeSingle();
+
+      if (vinculo?.loja_id !== dados.loja_id) {
+        if (vinculo) {
+          await supabase.from('agendadores_lojas').update({ data_fim: hoje() }).eq('id', vinculo.id);
+        }
+
+        // `agendadores_lojas` tem unique (usuario_id, loja_id) sem filtro de
+        // data_fim — diferente de participacoes_societarias, cujo indice e
+        // parcial. Quem volta a uma loja onde ja esteve tem a linha antiga
+        // reaberta; inserir de novo violaria a constraint.
+        const { data: anterior } = await supabase
+          .from('agendadores_lojas')
+          .select('id')
+          .eq('usuario_id', id)
+          .eq('loja_id', dados.loja_id)
+          .maybeSingle();
+
+        if (anterior) {
+          await supabase
+            .from('agendadores_lojas')
+            .update({ data_inicio: hoje(), data_fim: null })
+            .eq('id', anterior.id);
+        } else {
+          await supabase
+            .from('agendadores_lojas')
+            .insert({ usuario_id: id, loja_id: dados.loja_id, data_inicio: hoje() });
+        }
+      }
+    } else {
+      const { data: participacao } = await supabase
+        .from('participacoes_societarias')
+        .select('id, loja_id')
+        .eq('usuario_id', id)
+        .is('data_fim', null)
+        .maybeSingle();
+
+      if (participacao?.loja_id !== dados.loja_id) {
+        if (participacao) {
+          await supabase.from('participacoes_societarias').update({ data_fim: hoje() }).eq('id', participacao.id);
+        }
+        await supabase.from('participacoes_societarias').insert({
+          usuario_id: id,
+          loja_id: dados.loja_id,
+          percentual_participacao: dados.percentual_participacao ?? 100,
+          cargo: dados.role === 'franqueado' ? 'franqueado' : 'diretor',
+          data_inicio: hoje(),
+        });
+      }
+    }
+  }
+
+  revalidatePath('/dashboard/usuarios');
+  revalidatePath('/dashboard');
+  return { sucesso: true, mensagem: 'Usuario atualizado.' };
+}
+
+/**
+ * Liga e desliga o acesso. Desligar fecha os vinculos vigentes e revoga a
+ * sessao no Auth — sem isso o token atual continua valido ate expirar.
+ */
+export async function definirStatusUsuario(
+  id: string,
+  status: 'ativo' | 'inativo'
+): Promise<ResultadoAction> {
+  const gestor = await buscarUsuarioAtual();
+  if (!gestor || !podeGerenciarCadastros(gestor.role)) {
+    return { sucesso: false, mensagem: 'Voce nao tem permissao para alterar acessos.' };
+  }
+  if (gestor.id === id) {
+    return { sucesso: false, mensagem: 'Voce nao pode desativar a propria conta.' };
+  }
+
+  const supabase = createClient();
+  const { error } = await supabase.from('usuarios').update({ status }).eq('id', id);
+  if (error) return { sucesso: false, mensagem: `Nao foi possivel alterar: ${error.message}` };
+
+  if (status === 'inativo') {
+    await supabase.from('agendadores_lojas').update({ data_fim: hoje() }).eq('usuario_id', id).is('data_fim', null);
+    await supabase
+      .from('participacoes_societarias')
+      .update({ data_fim: hoje() })
+      .eq('usuario_id', id)
+      .is('data_fim', null);
+
+    // Derruba a sessao ativa. Se falhar, o RLS ja barra o acesso — por isso
+    // o erro nao aborta a operacao.
+    const admin = createAdminClient();
+    await admin.auth.admin.signOut(id, 'global').catch(() => undefined);
+  } else {
+    // Reativar so o status devolveria o login sem devolver a lotacao: o
+    // desligamento fechou os vinculos, e sem loja ativa o RLS entrega tela
+    // vazia. Reabre o ultimo vinculo encerrado para restaurar o estado.
+    const { data: vinculo } = await supabase
+      .from('agendadores_lojas')
+      .select('id')
+      .eq('usuario_id', id)
+      .not('data_fim', 'is', null)
+      .order('data_fim', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (vinculo) {
+      await supabase.from('agendadores_lojas').update({ data_fim: null }).eq('id', vinculo.id);
+    }
+
+    const { data: participacao } = await supabase
+      .from('participacoes_societarias')
+      .select('id')
+      .eq('usuario_id', id)
+      .not('data_fim', 'is', null)
+      .order('data_fim', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (participacao) {
+      await supabase.from('participacoes_societarias').update({ data_fim: null }).eq('id', participacao.id);
+    }
+  }
+
+  revalidatePath('/dashboard/usuarios');
+  revalidatePath('/dashboard');
+  return { sucesso: true, mensagem: status === 'inativo' ? 'Acesso encerrado.' : 'Acesso reativado.' };
 }
 
 /* ---------------------------- Franqueados ---------------------------- */

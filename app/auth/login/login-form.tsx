@@ -9,11 +9,20 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { entrar } from '@/app/actions/auth';
 
+/** Motivos que outras rotas repassam pela query string. */
+const ERRO_NA_URL: Record<string, string> = {
+  link_invalido: 'O link expirou ou ja foi usado. Peca um novo.',
+  acesso_revogado: 'Seu acesso foi encerrado. Fale com o responsavel pela sua loja.',
+};
+
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, iniciar] = useTransition();
+
+  const erroDaUrl = ERRO_NA_URL[searchParams.get('erro') ?? ''] ?? null;
+  const mensagem = erro ?? erroDaUrl;
 
   function aoEnviar(evento: React.FormEvent<HTMLFormElement>) {
     evento.preventDefault();
@@ -45,9 +54,9 @@ export function LoginForm() {
         <Input id="senha" name="senha" type="password" autoComplete="current-password" required />
       </div>
 
-      {erro ? (
+      {mensagem ? (
         <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-          {erro}
+          {mensagem}
         </p>
       ) : null}
 

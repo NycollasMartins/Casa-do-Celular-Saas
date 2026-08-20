@@ -22,10 +22,23 @@ export const buscarUsuarioAtual = cache(async (): Promise<Usuario | null> => {
   return data as Usuario;
 });
 
-/** Usa em paginas protegidas: redireciona para o login se nao houver sessao. */
+/**
+ * Usa em paginas protegidas: redireciona para o login se nao houver sessao.
+ *
+ * Usuario desligado tem a sessao encerrada aqui. O RLS ja devolveria tudo
+ * vazio para ele, mas uma tela sem dados e sem explicacao parece defeito —
+ * melhor deslogar dizendo o motivo.
+ */
 export async function exigirUsuario(): Promise<Usuario> {
   const usuario = await buscarUsuarioAtual();
   if (!usuario) redirect('/auth/login');
+
+  if (usuario.status === 'inativo') {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    redirect('/auth/login?erro=acesso_revogado');
+  }
+
   return usuario;
 }
 

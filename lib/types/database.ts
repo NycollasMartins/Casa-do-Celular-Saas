@@ -31,6 +31,8 @@ export type Usuario = {
   nome: string;
   role: UserRole;
   franqueado_id: string | null;
+  /** Desligamento sem apagar historico. Inativo perde acesso via RLS. */
+  status: 'ativo' | 'inativo';
   created_at: string;
   updated_at: string;
 };
