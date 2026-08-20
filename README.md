@@ -122,6 +122,12 @@ Abra `http://localhost:3000`. Sem sessão, o middleware manda para
 
 ## Banco de dados
 
+> **Atalho:** `supabase/APLICAR-PENDENTES.sql` reúne os passos 5 a 11 num
+> arquivo só, na ordem correta, e termina com uma consulta de conferência
+> que lista o que ficou faltando. É seguro rodar mais de uma vez — todo
+> comando é idempotente. Use-o se você não tem certeza de quais migrations
+> já aplicou.
+
 A ordem importa. São onze passos:
 
 **1. Schema** — no SQL Editor do Supabase, cole e execute
@@ -183,6 +189,11 @@ vendas e faturamento.
 `supabase/migrations/20250101000009_relatorio_semanal.sql`.
 Cria a tabela de controle de envio e a função que agrega o resumo do
 período.
+
+> **Se um script reclamar de "Could not find the function ... in the schema
+> cache"** com a função já criada, o PostgREST não recarregou o schema.
+> Rode `notify pgrst, 'reload schema';` no SQL Editor — o
+> `APLICAR-PENDENTES.sql` já faz isso ao final.
 
 ### Tabelas
 
