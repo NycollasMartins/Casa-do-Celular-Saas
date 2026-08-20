@@ -1,0 +1,104 @@
+name: CI
+
+# A Netlify publica a partir da main. Sem esta verificacao, um commit que
+# quebra o build ou os testes vai direto para producao e so aparece quando
+# alguem abre o sistema.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Um push novo cancela a execucao anterior do mesmo branch: nao adianta
+# gastar minuto verificando codigo que ja foi substituido.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificacao:
+    name: Tipos, lint, testes e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Checagem de tipos
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Testes unitarios
+        run: npm run test:unit
+
+      # O build passa sem variavel de ambiente: nenhum modulo le configuracao
+      # no carregamento, so dentro das funcoes. Isso e verificado aqui — se
+      # alguem introduzir um `throw` em nivel de modulo, este passo quebra.
+      - name: Build de producao
+        run: npm run build
+
+  e2e:
+    name: Testes de ponta a ponta
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: verificacao
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # O E2E sobe a aplicacao de verdade, entao precisa das chaves do
+      # Supabase. Sem os segredos configurados no repositorio, o job avisa e
+      # encerra sem falhar — o projeto continua clonavel e verificavel por
+      # quem nao tem acesso ao banco.
+      - name: Verificar segredos
+        id: segredos
+        run: |
+          if [ -n "${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" ] && [ -n "${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}" ]; then
+            echo "presentes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "presentes=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::E2E pulado: configure NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY em Settings > Secrets."
+          fi
+
+      - name: Instalar o Chromium
+        if: steps.segredos.outputs.presentes == 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Rodar E2E
+        if: steps.segredos.outputs.presentes == 'true'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_SITE_URL: http://localhost:3100
+        run: npm run test:e2e
+
+      - name: Guardar o relatorio quando falhar
+        if: failure() && steps.segredos.outputs.presentes == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+# Os testes de RLS (tests/rls) NAO rodam aqui de proposito: eles escrevem no
+# banco para provar que as policies barram o que devem barrar. Rodar isso a
+# cada push mexeria em dados reais. Use `npm run test:rls` num ambiente de
+# desenvolvimento com o seed aplicado.

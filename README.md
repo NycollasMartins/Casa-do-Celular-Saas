@@ -309,6 +309,23 @@ usuários do seed não existem, em vez de falharem em vermelho. É uma trava pro
 alguém aponte o `.env.local` para produção e saia escrevendo. Para rodá-las,
 execute antes `npm run seed:auth` e a migration de seed.
 
+### Integracao continua
+
+`.github/workflows/ci.yml` roda a cada push na `main` e em cada pull request:
+checagem de tipos, lint, testes unitários e build de produção. A Netlify
+publica a partir da `main`, então sem essa verificação um commit que quebra o
+build vai direto para produção e só aparece quando alguém abre o sistema.
+
+O job de E2E precisa das chaves do Supabase. Configure
+`NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` em *Settings →
+Secrets and variables → Actions*. Sem elas o job avisa e encerra sem falhar —
+o projeto continua clonável e verificável por quem não tem acesso ao banco.
+
+Os testes de **RLS não rodam no CI de propósito**: eles escrevem no banco
+para provar que as policies barram o que devem barrar, e fazer isso a cada
+push mexeria em dados reais. Rode `npm run test:rls` num ambiente de
+desenvolvimento com o seed aplicado.
+
 ---
 
 ## LGPD
