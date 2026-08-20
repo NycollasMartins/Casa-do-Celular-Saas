@@ -11,7 +11,8 @@
 #
 # Este script cria um banco descartavel, reproduz o que o Supabase fornece
 # (schema auth, auth.uid(), os papeis), aplica TODAS as migrations na ordem,
-# popula o seed e roda asserçoes de RLS impersonando cada papel.
+# popula o seed, roda asserçoes de RLS impersonando cada papel e exercita as
+# funcoes SQL (anonimizacao, lembrete, resumo semanal) contra dados reais.
 #
 # Nao substitui os testes contra o Supabase (npm run test:rls), que exercitam
 # tambem o PostgREST e o GoTrue. Cobre a camada onde mora a seguranca.
@@ -75,20 +76,27 @@ if [ "$falhou" -ne 0 ]; then
   exit 1
 fi
 
-echo
-echo "Asserçoes de RLS"
-# ON_ERROR_STOP + a excecao final do arquivo fazem o psql sair com codigo
-# diferente de zero quando alguma asserçao falha.
-if psql -d "$DB" -v ON_ERROR_STOP=1 -f "$VERIFICACAO/99-assercoes.sql" 2>&1 \
-     | sed -n '/situacao/,$p' | sed 's/^/  /'; then
-  resultado_rls=0
-else
-  resultado_rls=1
-fi
+# ON_ERROR_STOP + a excecao final de cada arquivo fazem o psql sair com
+# codigo diferente de zero quando alguma asserçao falha. `set -o pipefail`,
+# no topo, garante que o status do psql sobreviva ao pipe do sed.
+problemas=0
 
-if [ "${PIPESTATUS[0]:-0}" -ne 0 ] || [ "$resultado_rls" -ne 0 ]; then
+for arquivo in "$VERIFICACAO"/9*.sql; do
+  titulo="$(basename "$arquivo" .sql | sed 's/^[0-9]*-//')"
   echo
-  echo "Ha asserçao de RLS falhando."
+  echo "Asserçoes: $titulo"
+
+  if psql -d "$DB" -v ON_ERROR_STOP=1 -f "$arquivo" 2>&1 \
+       | sed -n '/situacao/,$p' | sed 's/^/  /'; then
+    :
+  else
+    problemas=1
+  fi
+done
+
+if [ "$problemas" -ne 0 ]; then
+  echo
+  echo "Ha asserçao falhando."
   exit 1
 fi
 

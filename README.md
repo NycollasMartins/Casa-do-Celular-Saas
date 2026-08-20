@@ -354,8 +354,14 @@ npm run verificar:banco
 
 Cria um banco descartável no PostgreSQL local, reproduz o que o Supabase
 fornece (schema `auth`, `auth.uid()`, os papéis), aplica **todas** as
-migrations na ordem, popula o seed e roda 16 asserções de RLS impersonando
-cada papel — inclusive a tentativa de escalada de privilégio.
+migrations na ordem, popula o seed e roda **35 asserções**:
+
+- **16 de RLS**, impersonando cada papel — inclusive a tentativa de escalada
+  de privilégio, que precisa ser barrada.
+- **19 das funções SQL**, com dados de verdade: a anonimização limpa os
+  campos pessoais e preserva loja e status para a métrica sobreviver; o
+  lembrete não repete quem já recebeu mas permite nova tentativa depois de
+  falha; o resumo semanal devolve zero, não nulo, em período sem movimento.
 
 Existe porque migrations só chegam ao banco quando alguém cola no SQL
 Editor. Entre escrever e aplicar, erro de SQL não aparece, e uma migration
