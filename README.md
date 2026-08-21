@@ -694,6 +694,15 @@ coluna só e com os acentos quebrados. Células iniciadas por `=`, `+`, `-` ou
 `@` levam apóstrofo na frente: o nome do cliente vem de entrada do usuário e
 o Excel executa fórmula ao abrir o arquivo.
 
+**Abrir antes de encerrar, sempre.** Vale para a transferência de
+participação e para a troca de loja na edição de usuário. Não há transação
+entre chamadas do PostgREST, então a ordem é escolhida pelo modo de falhar:
+encerrando primeiro, uma abertura que falhe — e ela pode, o trigger de
+tenant recusa loja de outro franqueado — deixa a pessoa **sem vínculo
+nenhum**, entrando num sistema vazio enquanto o gestor leu "atualizado".
+Abrindo primeiro, o pior estado é ter dois vínculos por um instante, que é
+visível na tela e corrigível.
+
 **Transferência de participação abre antes de encerrar.** Não há transação
 entre chamadas do PostgREST, então a ordem foi escolhida pelo modo de
 falhar: abre no destino e, se o encerramento da origem falhar, desfaz a

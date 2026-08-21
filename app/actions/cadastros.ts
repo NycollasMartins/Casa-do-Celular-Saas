@@ -178,6 +178,11 @@ export async function criarUsuario(formData: FormData): Promise<ResultadoAction>
 
     if (erroVinculo) {
       // Desfaz a conta: melhor nao criar do que criar sem acesso a nada.
+      //
+      // O erro destas duas linhas e ignorado de proposito: ja estamos
+      // devolvendo falha, e nada util o chamador faria com "a limpeza
+      // tambem falhou". Sobraria uma conta orfa em auth.users, que o
+      // franqueado resolve recriando com o mesmo e-mail.
       await admin.from('usuarios').delete().eq('id', criado.user.id);
       await admin.auth.admin.deleteUser(criado.user.id);
       return { sucesso: false, mensagem: `Nao foi possivel vincular a loja: ${erroVinculo.message}` };
@@ -245,52 +250,80 @@ export async function atualizarUsuario(id: string, formData: FormData): Promise<
 
   if (erroPerfil) return { sucesso: false, mensagem: `Nao foi possivel salvar: ${erroPerfil.message}` };
 
-  if (plano.encerrarAgendador.length > 0) {
-    await supabase
-      .from('agendadores_lojas')
-      .update({ data_fim: hoje() })
-      .in('id', plano.encerrarAgendador);
-  }
-
-  if (plano.encerrarParticipacao.length > 0) {
-    await supabase
-      .from('participacoes_societarias')
-      .update({ data_fim: hoje() })
-      .in('id', plano.encerrarParticipacao);
-  }
-
+  // A ORDEM E ABRIR ANTES DE ENCERRAR.
+  //
+  // Nao ha transacao entre chamadas do PostgREST. Se encerrar primeiro e a
+  // abertura falhar — e ela PODE falhar, o trigger de tenant recusa loja de
+  // outro franqueado —, a pessoa fica sem vinculo nenhum: entra no sistema e
+  // nao ve nada, enquanto o gestor leu "Usuario atualizado". Abrindo antes, o
+  // pior estado possivel e ter os dois vinculos por um instante.
   if (plano.abrirAgendador) {
     // `agendadores_lojas` tem unique (usuario_id, loja_id) sem filtro de
     // data_fim — diferente de participacoes_societarias, cujo indice e
     // parcial. Quem volta a uma loja onde ja esteve tem a linha antiga
     // reaberta; inserir de novo violaria a constraint.
-    const { data: anterior } = await supabase
+    const { data: anterior, error: erroConsulta } = await supabase
       .from('agendadores_lojas')
       .select('id')
       .eq('usuario_id', id)
       .eq('loja_id', plano.abrirAgendador)
       .maybeSingle();
 
-    if (anterior) {
-      await supabase
-        .from('agendadores_lojas')
-        .update({ data_inicio: hoje(), data_fim: null })
-        .eq('id', anterior.id);
-    } else {
-      await supabase
-        .from('agendadores_lojas')
-        .insert({ usuario_id: id, loja_id: plano.abrirAgendador, data_inicio: hoje() });
+    if (erroConsulta) {
+      return { sucesso: false, mensagem: `Nao foi possivel consultar a lotacao: ${erroConsulta.message}` };
+    }
+
+    const { error: erroAbertura } = anterior
+      ? await supabase
+          .from('agendadores_lojas')
+          .update({ data_inicio: hoje(), data_fim: null })
+          .eq('id', anterior.id)
+      : await supabase
+          .from('agendadores_lojas')
+          .insert({ usuario_id: id, loja_id: plano.abrirAgendador, data_inicio: hoje() });
+
+    if (erroAbertura) {
+      return { sucesso: false, mensagem: `Nao foi possivel vincular a loja: ${erroAbertura.message}` };
     }
   }
 
   if (plano.abrirParticipacao) {
-    await supabase.from('participacoes_societarias').insert({
+    const { error: erroAbertura } = await supabase.from('participacoes_societarias').insert({
       usuario_id: id,
       loja_id: plano.abrirParticipacao,
       percentual_participacao: dados.percentual_participacao ?? 100,
       cargo: dados.role === 'franqueado' ? 'franqueado' : 'diretor',
       data_inicio: hoje(),
     });
+
+    if (erroAbertura) {
+      return { sucesso: false, mensagem: `Nao foi possivel abrir a participacao: ${erroAbertura.message}` };
+    }
+  }
+
+  // Encerramentos por ultimo, e com o erro conferido: falhar aqui deixa a
+  // pessoa com vinculo duplicado, que e visivel na tela e corrigivel — bem
+  // melhor que ficar sem nenhum, que parece o sistema estar quebrado.
+  if (plano.encerrarAgendador.length > 0) {
+    const { error } = await supabase
+      .from('agendadores_lojas')
+      .update({ data_fim: hoje() })
+      .in('id', plano.encerrarAgendador);
+
+    if (error) {
+      return { sucesso: false, mensagem: `A nova lotacao foi criada, mas a antiga nao foi encerrada: ${error.message}` };
+    }
+  }
+
+  if (plano.encerrarParticipacao.length > 0) {
+    const { error } = await supabase
+      .from('participacoes_societarias')
+      .update({ data_fim: hoje() })
+      .in('id', plano.encerrarParticipacao);
+
+    if (error) {
+      return { sucesso: false, mensagem: `A nova participacao foi criada, mas a antiga nao foi encerrada: ${error.message}` };
+    }
   }
 
   revalidatePath('/dashboard/usuarios');
@@ -320,12 +353,30 @@ export async function definirStatusUsuario(
   if (error) return { sucesso: false, mensagem: `Nao foi possivel alterar: ${error.message}` };
 
   if (status === 'inativo') {
-    await supabase.from('agendadores_lojas').update({ data_fim: hoje() }).eq('usuario_id', id).is('data_fim', null);
-    await supabase
+    // Erro aqui deixaria a pessoa marcada como inativa mas com vinculo
+    // ativo. O RLS ja barraria pelo status, entao nao ha brecha de acesso —
+    // mas o Societario mostraria um socio que saiu, e o desligamento
+    // pareceria ter funcionado pela metade.
+    const { error: erroLotacao } = await supabase
+      .from('agendadores_lojas')
+      .update({ data_fim: hoje() })
+      .eq('usuario_id', id)
+      .is('data_fim', null);
+
+    const { error: erroParticipacao } = await supabase
       .from('participacoes_societarias')
       .update({ data_fim: hoje() })
       .eq('usuario_id', id)
       .is('data_fim', null);
+
+    if (erroLotacao || erroParticipacao) {
+      return {
+        sucesso: false,
+        mensagem: `Acesso bloqueado, mas os vinculos nao foram encerrados: ${
+          (erroLotacao ?? erroParticipacao)?.message
+        }`,
+      };
+    }
 
     // Derruba a sessao ativa. Se falhar, o RLS ja barra o acesso — por isso
     // o erro nao aborta a operacao.
@@ -354,7 +405,18 @@ export async function definirStatusUsuario(
       );
 
       if (paraReabrir.length > 0) {
-        await supabase.from(tabela).update({ data_fim: null }).in('id', paraReabrir);
+        const { error } = await supabase.from(tabela).update({ data_fim: null }).in('id', paraReabrir);
+
+        // Sem o vinculo de volta, a pessoa faz login e nao ve nada: sem loja
+        // ativa, lojas_permitidas() devolve conjunto vazio. Dizer "acesso
+        // reativado" nesse estado mandaria o gestor procurar defeito onde
+        // nao ha.
+        if (error) {
+          return {
+            sucesso: false,
+            mensagem: `Acesso reativado, mas a loja nao foi devolvida: ${error.message}`,
+          };
+        }
       }
     }
   }
@@ -566,6 +628,8 @@ export async function transferirParticipacao(
     .eq('id', id);
 
   if (erroEncerramento) {
+    // Erro ignorado de proposito, como no rollback de criarUsuario: a falha
+    // que importa e a do encerramento, e ela ja esta sendo devolvida.
     await supabase.from('participacoes_societarias').delete().eq('id', aberta.id);
     return { sucesso: false, mensagem: `Nao foi possivel encerrar a origem: ${erroEncerramento.message}` };
   }
