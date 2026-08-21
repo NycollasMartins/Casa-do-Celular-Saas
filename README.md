@@ -151,7 +151,19 @@ npm run seed:auth
 ```
 
 Cria os 21 usuários em `auth.users` via Admin API (1 dono, 2 diretores,
-18 agendadores) com a senha padrão `CasaCelular@2025`. Só desenvolvimento.
+18 agendadores) com a senha padrão `CasaCelular@2025`. **Só desenvolvimento** —
+e o script agora recusa rodar contra um Supabase que não seja local sem que
+`SEED_PASSWORD` seja definida.
+
+O motivo: diferente do cadastro feito pela aplicação, o seed **não marca**
+`senha_provisoria`. Contas criadas pela tela obrigam a trocar a senha no
+primeiro acesso; as do seed, não — a senha compartilhada fica valendo
+indefinidamente. Em um banco de produção seriam 21 contas ativas e
+privilegiadas com uma senha escrita no repositório, a mais poderosa delas
+enxergando o tenant inteiro.
+
+Se o seed já rodou contra produção, trate as contas: troque a senha ou
+remova-as em *Authentication → Users*.
 
 **4. Dados de negócio** — execute `supabase/migrations/20250101000002_seed.sql`.
 Cria o franqueado, as 9 lojas, espelha os usuários, monta as participações e
