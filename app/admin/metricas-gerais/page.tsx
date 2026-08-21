@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { calcularMetricas, calcularMetricasPorLoja } from '@/lib/supabase/queries';
 import { lerFiltros, type ParametrosBusca } from '@/lib/filtros';
 import { formatarNumero, formatarPercentual } from '@/lib/utils';
+import { LinhaVazia } from '@/components/ui/linha-vazia';
 
 export const metadata = { title: 'Metricas da rede · Admin' };
 
@@ -46,14 +47,20 @@ export default async function MetricasGeraisPage({ searchParams }: { searchParam
               </TableRow>
             </TableHeader>
             <TableBody>
-              {porLoja.map((linha) => (
-                <TableRow key={linha.lojaId}>
-                  <TableCell className="font-medium">{linha.nome}</TableCell>
-                  <TableCell className="tabular-nums">{formatarNumero(linha.contatos)}</TableCell>
-                  <TableCell className="tabular-nums">{formatarNumero(linha.agendados)}</TableCell>
-                  <TableCell className="tabular-nums">{formatarPercentual(linha.taxaConversao)}</TableCell>
-                </TableRow>
-              ))}
+              {porLoja.length === 0 ? (
+                <LinhaVazia colunas={4}>
+                  Nenhuma loja com movimento no periodo. Ajuste o intervalo ou confira se ha agendamentos.
+                </LinhaVazia>
+              ) : (
+                porLoja.map((linha) => (
+                  <TableRow key={linha.lojaId}>
+                    <TableCell className="font-medium">{linha.nome}</TableCell>
+                    <TableCell className="tabular-nums">{formatarNumero(linha.contatos)}</TableCell>
+                    <TableCell className="tabular-nums">{formatarNumero(linha.agendados)}</TableCell>
+                    <TableCell className="tabular-nums">{formatarPercentual(linha.taxaConversao)}</TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>

@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { FranqueadoDialog } from './franqueado-dialog';
 import { createClient } from '@/lib/supabase/server';
 import type { Franqueado } from '@/lib/types/database';
+import { LinhaVazia } from '@/components/ui/linha-vazia';
 
 export const metadata = { title: 'Franqueados · Admin' };
 
@@ -39,26 +40,32 @@ export default async function FranqueadosPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {franqueados.map((franqueado) => (
-                <TableRow key={franqueado.id}>
-                  <TableCell className="font-medium">{franqueado.nome}</TableCell>
-                  <TableCell className="font-mono text-xs text-slate-500">{franqueado.cnpj ?? '-'}</TableCell>
-                  <TableCell className="text-slate-600">{franqueado.email_contato ?? '-'}</TableCell>
-                  <TableCell>
-                    <Badge variant={VARIANTE[franqueado.status]}>{franqueado.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <FranqueadoDialog
-                      franqueado={franqueado}
-                      gatilho={
-                        <Button variant="ghost" size="icon" aria-label={`Editar ${franqueado.nome}`}>
-                          <Pencil className="h-4 w-4" aria-hidden />
-                        </Button>
-                      }
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
+              {franqueados.length === 0 ? (
+                <LinhaVazia colunas={5}>
+                  Nenhum franqueado cadastrado. Crie o primeiro para a rede sair do zero.
+                </LinhaVazia>
+              ) : (
+                franqueados.map((franqueado) => (
+                  <TableRow key={franqueado.id}>
+                    <TableCell className="font-medium">{franqueado.nome}</TableCell>
+                    <TableCell className="font-mono text-xs text-slate-500">{franqueado.cnpj ?? '-'}</TableCell>
+                    <TableCell className="text-slate-600">{franqueado.email_contato ?? '-'}</TableCell>
+                    <TableCell>
+                      <Badge variant={VARIANTE[franqueado.status]}>{franqueado.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <FranqueadoDialog
+                        franqueado={franqueado}
+                        gatilho={
+                          <Button variant="ghost" size="icon" aria-label={`Editar ${franqueado.nome}`}>
+                            <Pencil className="h-4 w-4" aria-hidden />
+                          </Button>
+                        }
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>

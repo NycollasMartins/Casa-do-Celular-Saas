@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/server';
 import { buscarLojasDoUsuario } from '@/lib/supabase/queries';
 import { ROLE_LABEL } from '@/lib/utils';
 import type { AgendadorLoja, ParticipacaoSocietaria, Usuario } from '@/lib/types/database';
+import { LinhaVazia } from '@/components/ui/linha-vazia';
 
 export const metadata = { title: 'Equipe · Casa do Celular' };
 
@@ -70,30 +71,36 @@ export default async function UsuariosPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {usuarios.map((usuario) => (
-                <TableRow key={usuario.id} className={usuario.status === 'inativo' ? 'opacity-60' : undefined}>
-                  <TableCell className="font-medium">{usuario.nome}</TableCell>
-                  <TableCell className="text-slate-600">{usuario.email}</TableCell>
-                  <TableCell>
-                    <Badge variant={VARIANTE[usuario.role] ?? 'neutral'}>{ROLE_LABEL[usuario.role]}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    {usuario.status === 'inativo' ? (
-                      <Badge variant="danger">Encerrado</Badge>
-                    ) : (
-                      <Badge variant="success">Ativo</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <AcoesUsuario
-                      usuario={usuario}
-                      lojas={lojas}
-                      lojaAtualId={lojaPorUsuario.get(usuario.id)}
-                      ehVoce={usuario.id === gestor.id}
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
+              {usuarios.length === 0 ? (
+                <LinhaVazia colunas={5}>
+                  Nenhuma pessoa na equipe ainda. Cadastre o primeiro agendador para comecar a medir.
+                </LinhaVazia>
+              ) : (
+                usuarios.map((usuario) => (
+                  <TableRow key={usuario.id} className={usuario.status === 'inativo' ? 'opacity-60' : undefined}>
+                    <TableCell className="font-medium">{usuario.nome}</TableCell>
+                    <TableCell className="text-slate-600">{usuario.email}</TableCell>
+                    <TableCell>
+                      <Badge variant={VARIANTE[usuario.role] ?? 'neutral'}>{ROLE_LABEL[usuario.role]}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {usuario.status === 'inativo' ? (
+                        <Badge variant="danger">Encerrado</Badge>
+                      ) : (
+                        <Badge variant="success">Ativo</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <AcoesUsuario
+                        usuario={usuario}
+                        lojas={lojas}
+                        lojaAtualId={lojaPorUsuario.get(usuario.id)}
+                        ehVoce={usuario.id === gestor.id}
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>

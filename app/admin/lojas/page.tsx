@@ -2,6 +2,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { createClient } from '@/lib/supabase/server';
+import { LinhaVazia } from '@/components/ui/linha-vazia';
 
 export const metadata = { title: 'Todas as lojas · Admin' };
 
@@ -44,23 +45,29 @@ export default async function AdminLojasPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {lojas.map((loja) => (
-                <TableRow key={loja.id}>
-                  <TableCell>
-                    <div className="font-medium">{loja.nome}</div>
-                    <div className="font-mono text-xs text-slate-400">{loja.codigo_loja}</div>
-                  </TableCell>
-                  <TableCell className="text-slate-600">{loja.franqueado?.nome ?? '-'}</TableCell>
-                  <TableCell className="text-slate-600">
-                    {loja.cidade} / {loja.estado}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={loja.status === 'ativo' ? 'success' : 'neutral'}>
-                      {loja.status === 'ativo' ? 'Ativa' : 'Inativa'}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {lojas.length === 0 ? (
+                <LinhaVazia colunas={4}>
+                  Nenhuma loja na rede ainda. Cadastre a primeira pelo painel do franqueado.
+                </LinhaVazia>
+              ) : (
+                lojas.map((loja) => (
+                  <TableRow key={loja.id}>
+                    <TableCell>
+                      <div className="font-medium">{loja.nome}</div>
+                      <div className="font-mono text-xs text-slate-400">{loja.codigo_loja}</div>
+                    </TableCell>
+                    <TableCell className="text-slate-600">{loja.franqueado?.nome ?? '-'}</TableCell>
+                    <TableCell className="text-slate-600">
+                      {loja.cidade} / {loja.estado}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={loja.status === 'ativo' ? 'success' : 'neutral'}>
+                        {loja.status === 'ativo' ? 'Ativa' : 'Inativa'}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>
