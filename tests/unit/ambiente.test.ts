@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ambienteSaudavel, conferirAmbiente } from '@/lib/ambiente';
+import { conferirSchema, limparCacheDeSchema } from '@/lib/prontidao';
 
 const COMPLETO = {
   NEXT_PUBLIC_SUPABASE_URL: 'https://abc.supabase.co',
@@ -82,5 +83,67 @@ describe('ambienteSaudavel', () => {
 
   it('ambiente vazio e insalubre', () => {
     expect(ambienteSaudavel(conferirAmbiente({}, true))).toBe(false);
+  });
+});
+
+describe('cache da conferencia de schema', () => {
+  /**
+   * `/api/saude` e aberta e cada conferencia dispara dez consultas. Sem
+   * cache, um laco de curl vira amplificacao: uma requisicao barata para
+   * quem chama, dez para o banco.
+   *
+   * A sondagem e injetada: sondar de verdade aqui significaria consultar o
+   * banco de producao a cada `npm test`.
+   */
+  function sondaFalsa() {
+    let chamadas = 0;
+    return {
+      get chamadas() {
+        return chamadas;
+      },
+      sondar: async () => {
+        chamadas += 1;
+        return [{ item: 'vendas', migration: '008', presente: true }];
+      },
+    };
+  }
+
+  it('nao repete a sondagem dentro da validade', async () => {
+    limparCacheDeSchema();
+    const sonda = sondaFalsa();
+
+    await conferirSchema(1_000_000, sonda.sondar);
+    await conferirSchema(1_010_000, sonda.sondar); // 10s depois
+    await conferirSchema(1_029_000, sonda.sondar); // 29s depois
+
+    expect(sonda.chamadas).toBe(1);
+  });
+
+  it('sonda de novo depois da validade', async () => {
+    limparCacheDeSchema();
+    const sonda = sondaFalsa();
+
+    await conferirSchema(2_000_000, sonda.sondar);
+    await conferirSchema(2_031_000, sonda.sondar); // 31s depois
+
+    expect(sonda.chamadas).toBe(2);
+  });
+
+  it('limparCacheDeSchema forca nova sondagem', async () => {
+    limparCacheDeSchema();
+    const sonda = sondaFalsa();
+
+    await conferirSchema(3_000_000, sonda.sondar);
+    limparCacheDeSchema();
+    await conferirSchema(3_000_100, sonda.sondar);
+
+    expect(sonda.chamadas).toBe(2);
+  });
+
+  it('devolve o resultado da sondagem, nao um vazio', async () => {
+    limparCacheDeSchema();
+    const itens = await conferirSchema(4_000_000, sondaFalsa().sondar);
+
+    expect(itens).toEqual([{ item: 'vendas', migration: '008', presente: true }]);
   });
 });

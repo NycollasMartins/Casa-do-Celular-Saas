@@ -677,6 +677,11 @@ uma função recém-criada pode aparecer como ausente por causa do cache. A
 resposta diz isso e sugere o `notify pgrst` antes de concluir que a
 migration não rodou.
 
+Sendo aberta e consultando o banco, a rota tem dois freios: o resultado da
+sondagem fica em cache por 30 segundos, e há teto de 12 conferências por
+minuto por IP. Sem eles, uma requisição barata para quem chama viraria dez
+consultas ao Supabase — amplificação clássica.
+
 A rota é aberta e não passa pelo Supabase de propósito — o momento em que
 ela é mais necessária é justamente quando ninguém consegue entrar. Nunca
 devolve o valor de variável nenhuma, só o nome da que falta.

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ambienteSaudavel, conferirAmbiente } from '@/lib/ambiente';
 import { conferirSchema, schemaCompleto } from '@/lib/prontidao';
+import { verificarRateLimit } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +16,24 @@ export const dynamic = 'force-dynamic';
  * NAO devolve valor de variavel nenhuma: so o nome da que falta e o que
  * deixa de funcionar sem ela.
  */
-export async function GET() {
+export async function GET(request: Request) {
+  // Rota aberta que consulta o banco precisa de teto. O identificador e o IP
+  // porque nao ha sessao — e sem sessao o `usuario.id` do resto da API nao
+  // existe. Doze por minuto sobra para quem esta conferindo um deploy e
+  // corta o laco de curl.
+  const ip =
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    request.headers.get('x-real-ip') ??
+    'desconhecido';
+
+  const limite = await verificarRateLimit(`saude:${ip}`, 12);
+  if (!limite.permitido) {
+    return NextResponse.json(
+      { erro: 'Muitas conferencias seguidas. Tente de novo em instantes.' },
+      { status: 429, headers: { 'Retry-After': String(limite.resetEmSegundos) } }
+    );
+  }
+
   const problemas = conferirAmbiente();
   const ambienteOk = ambienteSaudavel(problemas);
 

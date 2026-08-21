@@ -64,7 +64,38 @@ async function funcaoExiste<N extends NomeDeFuncao>(
 const DATA_INOFENSIVA = '1900-01-01';
 const UUID_INOFENSIVO = '00000000-0000-4000-8000-000000000000';
 
-export async function conferirSchema(): Promise<ItemDeSchema[]> {
+/**
+ * Cache curto do resultado.
+ *
+ * `/api/saude` e aberta e cada conferencia dispara dez consultas. Sem cache,
+ * um laco de curl vira amplificacao: uma requisicao barata para quem chama,
+ * dez para o banco. Schema nao muda de minuto em minuto — trinta segundos
+ * mantem a resposta util depois de rodar uma migration e cortam o abuso.
+ */
+const VALIDADE_MS = 30_000;
+let cache: { em: number; itens: ItemDeSchema[] } | null = null;
+
+/** Existe para o teste nao herdar cache de outro caso. */
+export function limparCacheDeSchema(): void {
+  cache = null;
+}
+
+/**
+ * `sondar` e injetavel para o teste do cache nao precisar de rede — sondar de
+ * verdade num teste unitario significaria consultar o banco de producao.
+ */
+export async function conferirSchema(
+  agora = Date.now(),
+  sondar: () => Promise<ItemDeSchema[]> = sondarSchema
+): Promise<ItemDeSchema[]> {
+  if (cache && agora - cache.em < VALIDADE_MS) return cache.itens;
+
+  const itens = await sondar();
+  cache = { em: agora, itens };
+  return itens;
+}
+
+async function sondarSchema(): Promise<ItemDeSchema[]> {
   const sondas: Array<[string, string, Promise<boolean>]> = [
     ['usuarios.status', '004', colunaExiste('usuarios', 'status')],
     ['usuarios: trava de campos sensiveis', '005', Promise.resolve(true)],
