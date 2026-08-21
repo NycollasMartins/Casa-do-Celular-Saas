@@ -13,6 +13,8 @@
  * que a LGPD trata como dado pessoal.
  */
 
+import { hojeNaLoja } from '@/lib/semana';
+
 export const MARCADOR = {
   nome: 'Cliente anonimizado',
   cpf: '000.000.000-00',
@@ -65,8 +67,35 @@ export function normalizarCpfParaBusca(valor: string): string | null {
  */
 export const MESES_RETENCAO_PADRAO = 24;
 
+/**
+ * Subtrai meses grudando no ultimo dia quando o mes de destino e mais curto,
+ * como o Postgres faz com `make_interval`.
+ *
+ * `setMonth` do JavaScript NAO faz isso — ele transborda:
+ *
+ *   2026-03-31 menos 1 mes -> 2026-03-03   (continua em marco)
+ *   2026-05-31 menos 1 mes -> 2026-05-01   (continua em maio)
+ *
+ * A funcao de retencao no banco usa a aritmetica do Postgres. Com a do
+ * JavaScript, num dia 31 a tela de Privacidade contava os vencidos por uma
+ * data quase um mes diferente da que o script usa para anonimizar — e podia
+ * exibir zero vencidos havendo muitos.
+ */
+export function subtrairMeses(iso: string, meses: number): string {
+  const [ano, mes, dia] = iso.slice(0, 10).split('-').map(Number);
+
+  const totalMeses = ano * 12 + (mes - 1) - meses;
+  const novoAno = Math.floor(totalMeses / 12);
+  const novoMes = ((totalMeses % 12) + 12) % 12;
+
+  // Dia 0 do mes seguinte e o ultimo dia do mes corrente.
+  const ultimoDia = new Date(Date.UTC(novoAno, novoMes + 1, 0)).getUTCDate();
+  const diaFinal = Math.min(dia, ultimoDia);
+
+  const dois = (n: number) => String(n).padStart(2, '0');
+  return `${novoAno}-${dois(novoMes + 1)}-${dois(diaFinal)}`;
+}
+
 export function dataLimiteRetencao(meses = MESES_RETENCAO_PADRAO, hoje = new Date()): string {
-  const limite = new Date(hoje);
-  limite.setMonth(limite.getMonth() - meses);
-  return limite.toISOString().slice(0, 10);
+  return subtrairMeses(hojeNaLoja(hoje), meses);
 }

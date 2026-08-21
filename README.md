@@ -709,6 +709,14 @@ falhar: abre no destino e, se o encerramento da origem falhar, desfaz a
 abertura. O pior estado possível é "continua na origem", nunca "perdeu as
 duas".
 
+**Subtrair meses não é `setMonth`.** No JavaScript, `2026-03-31` menos um
+mês devolve `2026-03-03` — ainda em março, porque o dia 31 transborda num
+mês de 30 e volta. O Postgres gruda no último dia e devolve `2026-02-28`, e
+é essa a aritmética da função de retenção no banco. Com as duas diferentes,
+num dia 31 a tela de Privacidade contava os vencidos por uma data quase um
+mês distante da que o script usa para anonimizar — e podia exibir zero
+vencidos havendo muitos.
+
 **"Hoje" tem uma fonte única: `hojeNaLoja`, em `lib/semana.ts`.** Nenhuma
 decisão de negócio sobre data usa `new Date()` direto. A razão é empírica:
 esse erro apareceu **cinco vezes** neste projeto — lembrete de véspera,

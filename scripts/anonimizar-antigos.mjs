@@ -41,9 +41,31 @@ if (!Number.isInteger(meses) || meses < 1) {
 
 const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
 
-const limite = new Date();
-limite.setMonth(limite.getMonth() - meses);
-const dataLimite = limite.toISOString().slice(0, 10);
+/**
+ * Espelha subtrairMeses de lib/lgpd.ts. `setMonth` transborda quando o mes
+ * de destino e mais curto — 31/03 menos 1 mes devolve 03/03, ainda em marco
+ * —, e a funcao no banco usa a aritmetica do Postgres, que gruda no ultimo
+ * dia. Com as duas diferentes, a tela contava uma coisa e o script
+ * anonimizava outra.
+ */
+function subtrairMeses(iso, meses) {
+  const [ano, mes, dia] = iso.split('-').map(Number);
+  const total = ano * 12 + (mes - 1) - meses;
+  const novoAno = Math.floor(total / 12);
+  const novoMes = ((total % 12) + 12) % 12;
+  const ultimoDia = new Date(Date.UTC(novoAno, novoMes + 1, 0)).getUTCDate();
+  const dois = (n) => String(n).padStart(2, '0');
+  return `${novoAno}-${dois(novoMes + 1)}-${dois(Math.min(dia, ultimoDia))}`;
+}
+
+const hojeNaLoja = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Sao_Paulo',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+}).format(new Date());
+
+const dataLimite = subtrairMeses(hojeNaLoja, meses);
 
 console.log(`Prazo de retencao: ${meses} meses (anteriores a ${dataLimite})`);
 
