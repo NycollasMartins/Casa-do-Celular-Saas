@@ -148,3 +148,30 @@ test.describe('telas publicas', () => {
     await expect(page).toHaveURL(/\/auth\/(forgot-password|login)/);
   });
 });
+
+test.describe('conferencia de configuracao', () => {
+  /**
+   * A rota precisa responder SEM sessao e sem depender do Supabase. Ela
+   * existe para o momento em que ninguem consegue entrar — o middleware sai
+   * antes de criar o cliente, senao ela so responderia quando ja nao fosse
+   * necessaria.
+   */
+  test('/api/saude responde sem sessao', async ({ request }) => {
+    const resposta = await request.get('/api/saude');
+
+    // 200 com tudo configurado, 503 se faltar algo que impede.
+    expect([200, 503]).toContain(resposta.status());
+
+    const corpo = await resposta.json();
+    expect(corpo).toHaveProperty('status');
+    expect(Array.isArray(corpo.problemas)).toBe(true);
+  });
+
+  /** Diz o NOME do que falta e a consequencia — nunca o valor. */
+  test('nao devolve valor de variavel nenhuma', async ({ request }) => {
+    const texto = await (await request.get('/api/saude')).text();
+
+    expect(texto).not.toMatch(/supabase\.co/);
+    expect(texto).not.toMatch(/sb_secret|sb_publishable|eyJ/);
+  });
+});

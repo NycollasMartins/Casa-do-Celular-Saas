@@ -659,6 +659,19 @@ autenticação por e-mail e senha em *Authentication → Providers*.
 ambiente (com `NEXT_PUBLIC_SITE_URL` apontando para o domínio de produção) e
 faça o deploy. Cada push na `main` publica automaticamente.
 
+**Confira a configuração em `/api/saude`.** Logo depois de publicar, abra
+essa rota no domínio novo: ela responde `200` quando está tudo no lugar e
+`503` listando o que falta e o que deixa de funcionar sem cada variável.
+
+A rota é aberta e não passa pelo Supabase de propósito — o momento em que
+ela é mais necessária é justamente quando ninguém consegue entrar. Nunca
+devolve o valor de variável nenhuma, só o nome da que falta.
+
+Ela acusa também o erro mais comum do primeiro deploy: `NEXT_PUBLIC_SITE_URL`
+publicada com o valor de desenvolvimento. O e-mail de recuperação chega
+normalmente e o link manda o usuário para a máquina dele — nada falha de
+forma visível.
+
 Depois de publicar, volte ao Supabase e adicione a URL de produção em
 *Authentication → URL Configuration → Redirect URLs*, senão o link de
 recuperação de senha volta para `localhost`.

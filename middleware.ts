@@ -11,6 +11,9 @@ const ROTAS_PUBLICAS = ['/auth/login', '/auth/register', '/auth/forgot-password'
  */
 const ROTAS_ABERTAS = [
   '/privacidade',
+  // Diz se o deploy esta configurado. Precisa responder justamente quando
+  // ninguem consegue entrar — exigir sessao a tornaria inutil.
+  '/api/saude',
   // Tunel do Sentry (tunnelRoute). Se o middleware exigisse sessao aqui, o
   // relatorio de erro seria redirecionado para o login e nunca chegaria —
   // e o erro mais importante de capturar e justamente o de quem nao
@@ -22,12 +25,21 @@ const ROTAS_ABERTAS = [
 const ROTA_NOVA_SENHA = '/auth/nova-senha';
 
 export async function middleware(request: NextRequest) {
-  const { response, user } = await atualizarSessao(request);
   const { pathname } = request.nextUrl;
-  const rotaPublica = ROTAS_PUBLICAS.some((rota) => pathname.startsWith(rota));
-  const rotaAberta = ROTAS_ABERTAS.some((rota) => pathname === rota || pathname.startsWith(`${rota}/`));
 
-  if (rotaAberta) return response;
+  // Rota aberta sai ANTES de tocar no Supabase.
+  //
+  // Nao e so economia: sem as variaveis de ambiente, `atualizarSessao`
+  // lanca ao criar o cliente, e a requisicao nunca chega ao destino. O
+  // /api/saude existe justamente para dizer que a configuracao esta
+  // faltando — se ele dependesse dessa mesma configuracao, so responderia
+  // quando ja nao fosse necessario.
+  if (ROTAS_ABERTAS.some((rota) => pathname === rota || pathname.startsWith(`${rota}/`))) {
+    return NextResponse.next();
+  }
+
+  const { response, user } = await atualizarSessao(request);
+  const rotaPublica = ROTAS_PUBLICAS.some((rota) => pathname.startsWith(rota));
 
   if (!user && !rotaPublica && pathname !== ROTA_NOVA_SENHA) {
     // Requisicao de dados recebe 401 em JSON; so navegacao vai para o login.
