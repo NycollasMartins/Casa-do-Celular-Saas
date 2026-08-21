@@ -374,7 +374,9 @@ GoTrue. Cobre a camada onde a segurança de fato mora.
 ### Integracao continua
 
 `.github/workflows/ci.yml` roda a cada push na `main` e em cada pull request:
-checagem de tipos, lint, testes unitários e build de produção. A Netlify
+checagem de tipos, lint, testes unitários, build de produção e — num
+container Postgres descartável — as 11 migrations com as 35 asserções de RLS
+e funções. É o que impede uma migration quebrada chegar ao SQL Editor. A Netlify
 publica a partir da `main`, então sem essa verificação um commit que quebra o
 build vai direto para produção e só aparece quando alguém abre o sistema.
 

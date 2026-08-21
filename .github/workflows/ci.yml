@@ -47,6 +47,44 @@ jobs:
       - name: Build de producao
         run: npm run build
 
+  banco:
+    name: Migrations e RLS
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Postgres de verdade, descartavel. As migrations sao escritas no repo e
+    # so chegam ao Supabase quando alguem cola no SQL Editor — sem este job,
+    # um erro de SQL so apareceria em producao.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar o cliente do Postgres
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      # Chama o script direto, sem Node: ele e bash e psql puros, entao o job
+      # nao precisa instalar dependencia nenhuma do projeto.
+      - name: Verificar migrations, RLS e funcoes
+        run: bash scripts/verificar-banco.sh
+
   e2e:
     name: Testes de ponta a ponta
     runs-on: ubuntu-latest
