@@ -4,12 +4,14 @@ import { PeriodoSelector } from '@/components/dashboard/periodo-selector';
 import { MetricsCards, MetricsCardsSkeleton } from '@/components/dashboard/metrics-cards';
 import { ChartsContainer, ChartsSkeleton } from '@/components/dashboard/charts-container';
 import { AgendamentosTable, AgendamentosTableSkeleton } from '@/components/dashboard/agendamentos-table';
+import { MinhaMeta } from '@/components/dashboard/minha-meta';
 import { exigirUsuario } from '@/lib/auth/session';
 import {
   buscarAgendadoresDoUsuario,
   buscarAgendamentos,
   buscarLojasDoUsuario,
   calcularMetricas,
+  minhaMetaDoMes,
 } from '@/lib/supabase/queries';
 import { lerFiltros, type ParametrosBusca } from '@/lib/filtros';
 import { ROLE_LABEL } from '@/lib/utils';
@@ -27,6 +29,19 @@ async function Indicadores({ filtros }: { filtros: ReturnType<typeof lerFiltros>
       <MetricsCards metricas={metricas} />
       <ChartsContainer metricas={metricas} />
     </>
+  );
+}
+
+/**
+ * So aparece para quem tem meta definida no mes. Fica em Suspense proprio
+ * para nao atrasar o resto do dashboard: sao duas consultas a mais.
+ */
+async function BlocoMinhaMeta({ usuarioId }: { usuarioId: string }) {
+  const dados = await minhaMetaDoMes(usuarioId);
+  if (!dados) return null;
+
+  return (
+    <MinhaMeta meta={dados.meta} realizado={dados.realizado} competencia={dados.competencia} />
   );
 }
 
@@ -81,6 +96,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pa
           />
         </div>
       </div>
+
+      {/* A policy sempre permitiu o agendador ler a propria meta; faltava
+          onde ele visse. Gestores acompanham a equipe inteira em /metas. */}
+      {usuario.role === 'agendador' ? (
+        <Suspense fallback={null}>
+          <BlocoMinhaMeta usuarioId={usuario.id} />
+        </Suspense>
+      ) : null}
 
       <Suspense
         key={JSON.stringify(filtros)}

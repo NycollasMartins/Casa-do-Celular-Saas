@@ -3,7 +3,7 @@ import { ptBR } from 'date-fns/locale';
 import { createClient } from '@/lib/supabase/server';
 import { STATUS_LABEL } from '@/lib/utils';
 import { ticketMedio } from '@/lib/dinheiro';
-import { fimDaCompetencia } from '@/lib/metas';
+import { competenciaDe, fimDaCompetencia } from '@/lib/metas';
 import type {
   Agendamento,
   AgendamentoComRelacoes,
@@ -370,4 +370,50 @@ export async function desempenhoNaCompetencia(competencia: string) {
       receita: Math.round(venda.receita * 100) / 100,
     };
   });
+}
+
+/**
+ * Meta e realizado do proprio usuario na competencia corrente.
+ *
+ * Sempre pelo cliente normal, sob RLS: `metas_select` ja garante que cada um
+ * so alcanca a propria meta, e repetir a regra aqui criaria uma segunda
+ * fonte de verdade que pode divergir da primeira.
+ */
+export async function minhaMetaDoMes(usuarioId: string) {
+  const competencia = competenciaDe();
+  const supabase = createClient();
+
+  const { data: meta } = await supabase
+    .from('metas')
+    .select('meta_agendamentos, meta_taxa_conversao, meta_vendas, meta_receita')
+    .eq('usuario_id', usuarioId)
+    .eq('competencia', competencia)
+    .maybeSingle();
+
+  if (!meta) return null;
+
+  // Reaproveita `desempenhoNaCompetencia` em vez de somar aqui: e o mesmo
+  // calculo que a tela de Metas mostra ao gestor, e duas contas paralelas
+  // acabariam divergindo. O custo extra e aceitavel porque o agendador
+  // enxerga uma loja so — e o bloco fica em Suspense proprio no dashboard.
+  const desempenho = await desempenhoNaCompetencia(competencia);
+  const meu = desempenho.find((linha) => linha.agendadorId === usuarioId);
+
+  return {
+    competencia,
+    meta: {
+      meta_agendamentos: meta.meta_agendamentos,
+      meta_taxa_conversao: meta.meta_taxa_conversao === null ? null : Number(meta.meta_taxa_conversao),
+      meta_vendas: meta.meta_vendas,
+      meta_receita: meta.meta_receita === null ? null : Number(meta.meta_receita),
+    },
+    // Sem movimento no mes o desempenho nao traz linha para a pessoa; zerar
+    // e o certo, senao a meta desapareceria justamente de quem nao comecou.
+    realizado: {
+      agendamentos: meu?.agendamentos ?? 0,
+      taxaConversao: meu?.taxaConversao ?? 0,
+      vendas: meu?.vendas ?? 0,
+      receita: meu?.receita ?? 0,
+    },
+  };
 }
