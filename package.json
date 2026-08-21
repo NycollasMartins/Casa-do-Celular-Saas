@@ -21,7 +21,8 @@
     "verificar:banco": "bash scripts/verificar-banco.sh",
     "consolidado:gerar": "node scripts/gerar-consolidado.mjs",
     "consolidado:conferir": "node scripts/gerar-consolidado.mjs --conferir",
-    "medir:consultas": "bash scripts/medir-consultas.sh"
+    "medir:consultas": "bash scripts/medir-consultas.sh",
+    "verificar:consolidado": "bash scripts/verificar-consolidado.sh"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

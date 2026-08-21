@@ -97,6 +97,14 @@ jobs:
       - name: Verificar migrations, RLS e funcoes
         run: bash scripts/verificar-banco.sh
 
+      # Aquele confere o caminho do desenvolvedor: migrations uma a uma, num
+      # banco vazio. Este confere o caminho de quem OPERA — o arquivo unico
+      # que uma pessoa cola no SQL Editor de producao, sobre banco parcial,
+      # com dados dentro, rodado mais de uma vez. O cabecalho do arquivo
+      # promete as duas coisas; ate agora ninguem tinha verificado.
+      - name: Verificar o consolidado que vai para producao
+        run: bash scripts/verificar-consolidado.sh
+
   e2e:
     name: Testes de ponta a ponta
     runs-on: ubuntu-latest

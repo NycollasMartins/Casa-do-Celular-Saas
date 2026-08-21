@@ -415,6 +415,32 @@ quebrada se revela em produção, no pior momento possível. Requer apenas
 Não substitui `npm run test:rls`, que exercita também o PostgREST e o
 GoTrue. Cobre a camada onde a segurança de fato mora.
 
+### Verificação do arquivo que vai para produção
+
+```bash
+npm run verificar:consolidado
+```
+
+`verificar:banco` cobre o caminho de quem desenvolve: migrations uma a uma,
+na ordem, num banco vazio. Este cobre o caminho de quem **opera** —
+`supabase/APLICAR-PENDENTES.sql`, o arquivo único que uma pessoa cola no SQL
+Editor.
+
+O cabeçalho desse arquivo afirma duas coisas fortes: que é seguro rodar mais
+de uma vez e que repara aplicação parcial. Nenhuma das duas estava
+verificada. Se fossem falsas, a descoberta viria no pior lugar possível —
+erro no meio da execução, em produção, sem transação para desfazer.
+
+Três cenários, e em todos as 62 asserções de comportamento precisam passar
+no fim:
+
+- **Aplicação parcial**: schema, RLS e seed prontos, mais algumas migrations
+  posteriores e as do meio faltando. É o estado real em que este projeto já
+  esteve.
+- **Repetição**: o mesmo arquivo três vezes seguidas, conferindo que nenhum
+  dado se perde entre uma e outra.
+- **Instalação limpa**: só schema, RLS e seed.
+
 ### Integracao continua
 
 `.github/workflows/ci.yml` roda a cada push na `main` e em cada pull request:
