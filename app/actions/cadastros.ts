@@ -16,6 +16,11 @@ import {
 import { planejarVinculos, selecionarParaReabrir, tabelaDoVinculo } from '@/lib/vinculos';
 import type { ResultadoAction } from './agendamentos';
 
+/** Data de hoje em ISO curto, formato aceito pelas colunas `date`. */
+function hoje(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function objeto(formData: FormData): Record<string, string> {
   const saida: Record<string, string> = {};
   formData.forEach((valor, chave) => {
@@ -90,8 +95,33 @@ export async function criarUsuario(formData: FormData): Promise<ResultadoAction>
     return { sucesso: false, mensagem: 'Escolha a loja do agendador.', erros: { loja_id: ['Campo obrigatorio'] } };
   }
 
-  const franqueadoId = String(formData.get('franqueado_id') ?? gestor.franqueado_id ?? '');
+  // O tenant NAO vem do formulario para quem nao e super_admin.
+  //
+  // Esta action escreve com service role — necessario para a Admin API criar
+  // a conta em auth.users — e service role ignora RLS. Confiar num campo que
+  // o cliente envia permitia a um franqueado criar usuario dentro do tenant
+  // de outro, sem nenhuma barreira no caminho.
+  const franqueadoId =
+    gestor.role === 'super_admin'
+      ? String(formData.get('franqueado_id') ?? '')
+      : String(gestor.franqueado_id ?? '');
+
   if (!franqueadoId) return { sucesso: false, mensagem: 'Franqueado nao identificado.' };
+
+  // Mesma razao para a loja: sem RLS no caminho, um loja_id de outro tenant
+  // criaria vinculo cruzado. O trigger vinculo_exige_mesmo_tenant barra no
+  // banco; conferir aqui devolve mensagem legivel em vez de exception.
+  if (dados.loja_id) {
+    const { data: loja } = await createAdminClient()
+      .from('lojas')
+      .select('id, franqueado_id')
+      .eq('id', dados.loja_id)
+      .maybeSingle();
+
+    if (!loja || loja.franqueado_id !== franqueadoId) {
+      return { sucesso: false, mensagem: 'A loja escolhida nao pertence a este franqueado.' };
+    }
+  }
 
   const admin = createAdminClient();
   const senhaProvisoria = crypto.randomUUID().slice(0, 12) + 'A1!';
@@ -122,30 +152,35 @@ export async function criarUsuario(formData: FormData): Promise<ResultadoAction>
   }
 
   if (dados.loja_id) {
-    if (dados.role === 'agendador') {
-      await admin.from('agendadores_lojas').insert({
-        usuario_id: criado.user.id,
-        loja_id: dados.loja_id,
-        data_inicio: new Date().toISOString().slice(0, 10),
-      });
-    } else {
-      await admin.from('participacoes_societarias').insert({
-        usuario_id: criado.user.id,
-        loja_id: dados.loja_id,
-        percentual_participacao: dados.percentual_participacao ?? 100,
-        cargo: dados.role === 'franqueado' ? 'franqueado' : 'diretor',
-        data_inicio: new Date().toISOString().slice(0, 10),
-      });
+    // O erro do vinculo NAO pode ser ignorado. Sem ele, a conta e criada, a
+    // mensagem diz "usuario criado" com a senha provisoria, e a pessoa entra
+    // num sistema vazio: sem loja ativa, lojas_permitidas() nao devolve nada.
+    // O gestor acharia que deu certo.
+    const { error: erroVinculo } =
+      dados.role === 'agendador'
+        ? await admin.from('agendadores_lojas').insert({
+            usuario_id: criado.user.id,
+            loja_id: dados.loja_id,
+            data_inicio: hoje(),
+          })
+        : await admin.from('participacoes_societarias').insert({
+            usuario_id: criado.user.id,
+            loja_id: dados.loja_id,
+            percentual_participacao: dados.percentual_participacao ?? 100,
+            cargo: dados.role === 'franqueado' ? 'franqueado' : 'diretor',
+            data_inicio: hoje(),
+          });
+
+    if (erroVinculo) {
+      // Desfaz a conta: melhor nao criar do que criar sem acesso a nada.
+      await admin.from('usuarios').delete().eq('id', criado.user.id);
+      await admin.auth.admin.deleteUser(criado.user.id);
+      return { sucesso: false, mensagem: `Nao foi possivel vincular a loja: ${erroVinculo.message}` };
     }
   }
 
   revalidatePath('/dashboard/usuarios');
   return { sucesso: true, mensagem: `Usuario criado. Senha provisoria: ${senhaProvisoria}` };
-}
-
-/** Data de hoje em ISO curto, formato aceito pelas colunas `date`. */
-function hoje(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 /**

@@ -128,7 +128,7 @@ Abra `http://localhost:3000`. Sem sessão, o middleware manda para
 > comando é idempotente. Use-o se você não tem certeza de quais migrations
 > já aplicou.
 
-A ordem importa. São doze passos:
+A ordem importa. São treze passos:
 
 **1. Schema** — no SQL Editor do Supabase, cole e execute
 `supabase/migrations/`.
@@ -194,6 +194,11 @@ período.
 `supabase/migrations/20250101000010_venda_trava_status.sql`.
 Impede alterar o comparecimento de um atendimento que já tem venda
 registrada. Sem isso, o faturamento contabilizava cliente que não apareceu.
+
+**13. Vínculo só dentro do tenant** — execute
+`supabase/migrations/20250101000011_vinculo_mesmo_tenant.sql`.
+Impede vincular usuário a loja de outro franqueado. **Não pule este passo:**
+sem ele, um vínculo cruzado dá acesso aos dados do outro tenant.
 
 > **Se um script reclamar de "Could not find the function ... in the schema
 > cache"** com a função já criada, o PostgREST não recarregou o schema.
@@ -359,11 +364,11 @@ npm run verificar:banco
 
 Cria um banco descartável no PostgreSQL local, reproduz o que o Supabase
 fornece (schema `auth`, `auth.uid()`, os papéis), aplica **todas** as
-migrations na ordem, popula o seed e roda **39 asserções**:
+migrations na ordem, popula o seed e roda **42 asserções**:
 
 - **16 de RLS**, impersonando cada papel — inclusive a tentativa de escalada
   de privilégio, que precisa ser barrada.
-- **23 das funções e triggers SQL**, com dados de verdade: a anonimização limpa os
+- **26 das funções e triggers SQL**, com dados de verdade: a anonimização limpa os
   campos pessoais e preserva loja e status para a métrica sobreviver; o
   lembrete não repete quem já recebeu mas permite nova tentativa depois de
   falha; o resumo semanal devolve zero, não nulo, em período sem movimento.
@@ -380,7 +385,7 @@ GoTrue. Cobre a camada onde a segurança de fato mora.
 
 `.github/workflows/ci.yml` roda a cada push na `main` e em cada pull request:
 checagem de tipos, lint, testes unitários, build de produção e — num
-container Postgres descartável — as 12 migrations com as 39 asserções de RLS
+container Postgres descartável — as 13 migrations com as 42 asserções de RLS
 e funções. É o que impede uma migration quebrada chegar ao SQL Editor. A Netlify
 publica a partir da `main`, então sem essa verificação um commit que quebra o
 build vai direto para produção e só aparece quando alguém abre o sistema.

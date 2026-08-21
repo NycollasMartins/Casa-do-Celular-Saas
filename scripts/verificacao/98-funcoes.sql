@@ -207,6 +207,63 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- Vinculo so dentro do proprio tenant (migration 012)
+--
+-- lojas_permitidas() devolve as lojas onde o agendador tem vinculo ativo,
+-- sem conferir tenant. Bastava existir um vinculo cruzado para um usuario
+-- do tenant A enxergar os agendamentos do tenant B — e o cliente com
+-- service role, usado para criar usuario, criava esse vinculo sem barreira.
+-- ---------------------------------------------------------------------
+do $$
+declare v_franq_b uuid; v_loja_b uuid; v_user uuid; v_loja_a uuid; v_erro text;
+begin
+  insert into public.franqueados (nome, status) values ('__tenant_teste__', 'ativo')
+  returning id into v_franq_b;
+  insert into public.lojas (franqueado_id, nome, codigo_loja, estado, cidade)
+  values (v_franq_b, '__loja_teste__', 'TESTE-B1', 'SP', 'Sao Paulo')
+  returning id into v_loja_b;
+
+  select id into v_user from public.usuarios where role = 'agendador' limit 1;
+
+  begin
+    insert into public.agendadores_lojas (usuario_id, loja_id, data_inicio)
+    values (v_user, v_loja_b, current_date);
+    v_erro := 'nao barrou';
+  exception when others then v_erro := 'barrou';
+  end;
+  perform pg_temp.checar('lotacao em loja de outro tenant e barrada', 'barrou', v_erro);
+
+  begin
+    insert into public.participacoes_societarias
+      (usuario_id, loja_id, percentual_participacao, cargo, data_inicio)
+    values (v_user, v_loja_b, 10, 'diretor', current_date);
+    v_erro := 'nao barrou';
+  exception when others then v_erro := 'barrou';
+  end;
+  perform pg_temp.checar('participacao em loja de outro tenant e barrada', 'barrou', v_erro);
+
+  -- Dentro do proprio tenant segue liberado.
+  select l.id into v_loja_a
+  from public.lojas l
+  join public.usuarios u on u.franqueado_id = l.franqueado_id
+  where u.id = v_user
+    and l.id not in (select loja_id from public.agendadores_lojas where usuario_id = v_user)
+  limit 1;
+
+  begin
+    insert into public.agendadores_lojas (usuario_id, loja_id, data_inicio)
+    values (v_user, v_loja_a, current_date);
+    v_erro := 'permitiu';
+  exception when others then v_erro := 'barrou';
+  end;
+  perform pg_temp.checar('lotacao no proprio tenant continua liberada', 'permitiu', v_erro);
+
+  delete from public.agendadores_lojas where usuario_id = v_user and loja_id = v_loja_a;
+  delete from public.lojas where id = v_loja_b;
+  delete from public.franqueados where id = v_franq_b;
+end $$;
+
+-- ---------------------------------------------------------------------
 -- RLS de metas (migration 009): o agendador le a propria
 -- ---------------------------------------------------------------------
 do $$
