@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { agregarMetricas, agregarPorLoja, resolverIntervalo } from '@/lib/supabase/queries';
+import {
+  agregarMetricas,
+  agregarPorLoja,
+  agruparPorAgendador,
+  agruparPorDia,
+  distribuirStatus,
+  resolverIntervalo,
+} from '@/lib/supabase/queries';
 import type { AgendamentoComRelacoes, AgendamentoStatus } from '@/lib/types/database';
 
 /**
@@ -344,5 +351,126 @@ describe('resolverIntervalo', () => {
   it('periodo personalizado sem as duas datas cai no padrao', () => {
     const { fim } = resolverIntervalo({ periodo: 'personalizado' }, new Date('2026-08-20T15:00:00Z'));
     expect(fim).toBe('2026-08-20');
+  });
+});
+
+describe('agruparPorDia', () => {
+  const dia = (data: string, status: AgendamentoStatus = 'contatado') => ({
+    data_agendamento: data,
+    status,
+  });
+
+  it('cobre todos os dias do intervalo, inclusive os vazios', () => {
+    const serie = agruparPorDia([dia('2026-08-03')], '2026-08-01', '2026-08-05');
+
+    expect(serie).toHaveLength(5);
+    expect(serie.map((p) => p.data)).toEqual([
+      '2026-08-01',
+      '2026-08-02',
+      '2026-08-03',
+      '2026-08-04',
+      '2026-08-05',
+    ]);
+    expect(serie[2].contatos).toBe(1);
+    expect(serie[0].contatos).toBe(0);
+  });
+
+  it('rotula como dia/mes', () => {
+    expect(agruparPorDia([], '2026-08-09', '2026-08-09')[0].label).toBe('09/08');
+  });
+
+  it('atravessa a virada de mes', () => {
+    const serie = agruparPorDia([], '2026-08-30', '2026-09-02');
+    expect(serie.map((p) => p.data)).toEqual([
+      '2026-08-30',
+      '2026-08-31',
+      '2026-09-01',
+      '2026-09-02',
+    ]);
+  });
+
+  it('atravessa 29 de fevereiro em ano bissexto', () => {
+    const serie = agruparPorDia([], '2028-02-28', '2028-03-01');
+    expect(serie.map((p) => p.data)).toEqual(['2028-02-28', '2028-02-29', '2028-03-01']);
+  });
+
+  /**
+   * A serie nasce de aritmetica de string. Somar 86.400.000 ms a um Date
+   * local repete ou pula um dia ao atravessar o horario de verao — nem
+   * Brasilia nem UTC tem, entao a versao anterior funcionava por
+   * coincidencia, e so ate rodar em outro fuso.
+   */
+  it('nao repete nem pula dia num intervalo longo', () => {
+    const serie = agruparPorDia([], '2026-01-01', '2026-12-31');
+    const unicos = new Set(serie.map((p) => p.data));
+
+    expect(serie).toHaveLength(365);
+    expect(unicos.size).toBe(365);
+  });
+
+  it('ignora registro fora do intervalo', () => {
+    const serie = agruparPorDia([dia('2026-07-15')], '2026-08-01', '2026-08-02');
+    expect(serie.every((p) => p.contatos === 0)).toBe(true);
+  });
+
+  it('intervalo invertido devolve serie vazia', () => {
+    expect(agruparPorDia([], '2026-08-10', '2026-08-01')).toEqual([]);
+  });
+
+  /** Sem o teto, `?inicio=1900-01-01` montaria 45 mil pontos. */
+  it('limita a serie para intervalo absurdo nao travar a pagina', () => {
+    const serie = agruparPorDia([], '1900-01-01', '2026-12-31');
+    expect(serie.length).toBeLessThanOrEqual(1000);
+  });
+});
+
+describe('agruparPorAgendador', () => {
+  it('separa por pessoa e ordena pela conversao', () => {
+    const linhas = agruparPorAgendador([
+      registro('contatado'),
+      registro('compareceu'),
+      registro('compareceu', {
+        agendador_id: 'agend-2',
+        agendador: { id: 'agend-2', nome: 'Bruno' },
+      }),
+    ]);
+
+    // Bruno converteu 1 de 1; Ana, 1 de 2.
+    expect(linhas[0].nome).toBe('Bruno');
+    expect(linhas[0].taxaConversao).toBe(100);
+    expect(linhas[1].taxaConversao).toBe(50);
+  });
+
+  it('conta quem faltou como agendado, como no resto do sistema', () => {
+    const linhas = agruparPorAgendador([registro('nao_compareceu')]);
+    expect(linhas[0].agendados).toBe(1);
+    expect(linhas[0].taxaConversao).toBe(100);
+  });
+
+  it('devolve lista vazia sem registro', () => {
+    expect(agruparPorAgendador([])).toEqual([]);
+  });
+});
+
+describe('distribuirStatus', () => {
+  it('conta cada status presente', () => {
+    const fatias = distribuirStatus([
+      { status: 'contatado' },
+      { status: 'contatado' },
+      { status: 'compareceu' },
+    ]);
+
+    expect(fatias.find((f) => f.status === 'contatado')?.total).toBe(2);
+    expect(fatias.find((f) => f.status === 'compareceu')?.total).toBe(1);
+  });
+
+  /** Fatia de tamanho zero polui a legenda do grafico sem informar nada. */
+  it('omite status sem nenhum registro', () => {
+    const fatias = distribuirStatus([{ status: 'contatado' }]);
+    expect(fatias).toHaveLength(1);
+  });
+
+  it('traz o rotulo legivel junto do status', () => {
+    expect(distribuirStatus([{ status: 'nao_compareceu' }])[0].label).toBeTruthy();
   });
 });

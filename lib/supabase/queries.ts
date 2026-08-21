@@ -1,5 +1,3 @@
-import { format, parseISO } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 import { createClient } from '@/lib/supabase/server';
 import { STATUS_LABEL } from '@/lib/utils';
 import { ticketMedio } from '@/lib/dinheiro';
@@ -215,7 +213,14 @@ const STATUS_AGENDADOS: AgendamentoStatus[] = ['agendado', 'compareceu', 'nao_co
 /** Visitas cujo desfecho ja se sabe. Quem ainda vai acontecer nao entra. */
 const STATUS_CONCLUIDOS: AgendamentoStatus[] = ['compareceu', 'nao_compareceu'];
 
-function agruparPorDia(
+/** Proximo dia em AAAA-MM-DD, sem passar por fuso nenhum. */
+function proximoDia(iso: string): string {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+export function agruparPorDia(
   registros: Pick<Agendamento, 'data_agendamento' | 'status'>[],
   inicio: string,
   fim: string
@@ -223,16 +228,26 @@ function agruparPorDia(
   const mapa = new Map<string, PontoDiario>();
 
   // Preenche todos os dias do intervalo para o grafico nao ter buracos.
-  const dataFim = parseISO(fim);
-  for (let d = parseISO(inicio); d <= dataFim; d = new Date(d.getTime() + 86_400_000)) {
-    const chave = format(d, 'yyyy-MM-dd');
-    mapa.set(chave, {
-      data: chave,
-      label: format(d, 'dd/MM', { locale: ptBR }),
+  //
+  // A serie e montada com aritmetica de STRING, nao somando 86.400.000 ms a
+  // um Date local. Somar milissegundos atravessando o inicio ou o fim do
+  // horario de verao desloca a hora local e faz `format` repetir ou pular um
+  // dia. Nem Brasilia nem UTC tem horario de verao hoje, entao a versao
+  // anterior funcionava — por coincidencia, e so ate alguem rodar isto numa
+  // maquina em outro fuso.
+  for (let dia = inicio; dia <= fim; dia = proximoDia(dia)) {
+    const [, mes, diaDoMes] = dia.split('-');
+    mapa.set(dia, {
+      data: dia,
+      label: `${diaDoMes}/${mes}`,
       contatos: 0,
       agendados: 0,
       compareceram: 0,
     });
+
+    // Guarda contra intervalo absurdo vindo da query string: sem ela, um
+    // `?inicio=1900-01-01` montaria uma serie de 45 mil pontos.
+    if (mapa.size >= 1000) break;
   }
 
   for (const registro of registros) {
@@ -246,7 +261,7 @@ function agruparPorDia(
   return Array.from(mapa.values());
 }
 
-function agruparPorAgendador(registros: AgendamentoComRelacoes[]): DesempenhoAgendador[] {
+export function agruparPorAgendador(registros: AgendamentoComRelacoes[]): DesempenhoAgendador[] {
   const mapa = new Map<string, DesempenhoAgendador>();
 
   for (const registro of registros) {
@@ -274,7 +289,7 @@ function agruparPorAgendador(registros: AgendamentoComRelacoes[]): DesempenhoAge
     .sort((a, b) => b.taxaConversao - a.taxaConversao || b.agendados - a.agendados);
 }
 
-function distribuirStatus(registros: Pick<Agendamento, 'status'>[]): FatiaStatus[] {
+export function distribuirStatus(registros: Pick<Agendamento, 'status'>[]): FatiaStatus[] {
   const contagem = new Map<AgendamentoStatus, number>();
   for (const registro of registros) {
     contagem.set(registro.status, (contagem.get(registro.status) ?? 0) + 1);
