@@ -310,6 +310,26 @@ export function distribuirStatus(registros: Pick<Agendamento, 'status'>[]): Fati
  *
  * O RLS de `vendas` deriva do agendamento, entao o escopo ja vem correto.
  */
+/**
+ * Percorre uma lista de ids em lotes, juntando os resultados.
+ *
+ * O `in` do PostgREST vai para a query string, entao uma lista grande
+ * estoura o limite de URL. O erro facil — e que ja cometi nesta base — e
+ * cortar em `slice(0, 200)` e seguir: a consulta funciona, ninguem reclama,
+ * e o que passa do lote simplesmente nao aparece.
+ */
+export async function emLotes<T>(
+  ids: string[],
+  consultar: (lote: string[]) => Promise<T[]>,
+  tamanho = 200
+): Promise<T[]> {
+  const resultado: T[] = [];
+  for (let i = 0; i < ids.length; i += tamanho) {
+    resultado.push(...(await consultar(ids.slice(i, i + tamanho))));
+  }
+  return resultado;
+}
+
 async function buscarVendasDosAgendamentos(
   agendamentoIds: string[]
 ): Promise<Map<string, number>> {
@@ -318,20 +338,18 @@ async function buscarVendasDosAgendamentos(
 
   const supabase = createClient();
 
-  // O `in` vai para a query string; lotes evitam estourar o limite de URL.
-  const TAMANHO_LOTE = 200;
-  for (let i = 0; i < agendamentoIds.length; i += TAMANHO_LOTE) {
-    const lote = agendamentoIds.slice(i, i + TAMANHO_LOTE);
+  const vendas = await emLotes(agendamentoIds, async (lote) => {
     const { data, error } = await supabase
       .from('vendas')
       .select('agendamento_id, valor')
       .in('agendamento_id', lote);
 
     if (error) throw new Error(`Nao foi possivel carregar as vendas: ${error.message}`);
+    return data ?? [];
+  });
 
-    for (const venda of data ?? []) {
-      porAgendamento.set(venda.agendamento_id, Number(venda.valor));
-    }
+  for (const venda of vendas) {
+    porAgendamento.set(venda.agendamento_id, Number(venda.valor));
   }
 
   return porAgendamento;

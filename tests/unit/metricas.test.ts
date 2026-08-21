@@ -5,6 +5,7 @@ import {
   agruparPorAgendador,
   agruparPorDia,
   distribuirStatus,
+  emLotes,
   resolverIntervalo,
 } from '@/lib/supabase/queries';
 import type { AgendamentoComRelacoes, AgendamentoStatus } from '@/lib/types/database';
@@ -472,5 +473,55 @@ describe('distribuirStatus', () => {
 
   it('traz o rotulo legivel junto do status', () => {
     expect(distribuirStatus([{ status: 'nao_compareceu' }])[0].label).toBeTruthy();
+  });
+});
+
+describe('emLotes', () => {
+  it('devolve vazio sem ids', async () => {
+    expect(await emLotes([], async () => ['nunca'])).toEqual([]);
+  });
+
+  it('faz uma consulta so quando cabe num lote', async () => {
+    const lotes: string[][] = [];
+    await emLotes(['a', 'b'], async (lote) => {
+      lotes.push(lote);
+      return lote;
+    });
+
+    expect(lotes).toHaveLength(1);
+  });
+
+  /**
+   * DEFEITO CORRIGIDO: a versao anterior cortava em slice(0, 200) e seguia.
+   * A consulta funcionava, ninguem via erro, e o que passava do lote
+   * simplesmente nao aparecia na tela.
+   */
+  it('percorre TODOS os ids, nao so o primeiro lote', async () => {
+    const ids = Array.from({ length: 450 }, (_, i) => `id-${i}`);
+    const vistos: string[] = [];
+
+    const resultado = await emLotes(ids, async (lote) => {
+      vistos.push(...lote);
+      return lote;
+    });
+
+    expect(vistos).toHaveLength(450);
+    expect(resultado).toHaveLength(450);
+    expect(resultado[449]).toBe('id-449');
+  });
+
+  it('respeita o tamanho de lote informado', async () => {
+    const tamanhos: number[] = [];
+    await emLotes(['a', 'b', 'c', 'd', 'e'], async (lote) => {
+      tamanhos.push(lote.length);
+      return [];
+    }, 2);
+
+    expect(tamanhos).toEqual([2, 2, 1]);
+  });
+
+  it('junta o que cada lote devolve, na ordem', async () => {
+    const resultado = await emLotes(['a', 'b', 'c'], async (lote) => lote.map((i) => i.toUpperCase()), 2);
+    expect(resultado).toEqual(['A', 'B', 'C']);
   });
 });

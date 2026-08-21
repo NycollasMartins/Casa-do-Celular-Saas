@@ -9,6 +9,7 @@ import {
   buscarAgendadoresDoUsuario,
   buscarAgendamentos,
   buscarLojasDoUsuario,
+  emLotes,
 } from '@/lib/supabase/queries';
 import { lerFiltros, type ParametrosBusca } from '@/lib/filtros';
 import { createClient } from '@/lib/supabase/server';
@@ -51,17 +52,24 @@ export default async function AgendamentosPage({ searchParams }: { searchParams:
 
   if (comVisita.length > 0) {
     const supabase = createClient();
-    const { data } = await supabase
-      .from('notificacoes')
-      .select('agendamento_id, status, canal, detalhe')
-      .eq('tipo', 'vespera')
-      .in('agendamento_id', comVisita.slice(0, 200))
-      .order('criada_em', { ascending: false });
+
+    // Em lotes ate o fim, nao so o primeiro. Cortar em 200 fazia o sininho
+    // sumir do 201o em diante — o lembrete tinha saido e a tela dizia que
+    // nao.
+    const linhas = await emLotes(comVisita, async (lote) => {
+      const { data } = await supabase
+        .from('notificacoes')
+        .select('agendamento_id, status, canal, detalhe')
+        .eq('tipo', 'vespera')
+        .in('agendamento_id', lote)
+        .order('criada_em', { ascending: false });
+      return data ?? [];
+    });
 
     // A consulta vem da mais recente para a mais antiga e a tabela permite
     // varias falhas por agendamento; a primeira ocorrencia de cada id e a
     // que vale.
-    for (const linha of data ?? []) {
+    for (const linha of linhas) {
       if (lembretes[linha.agendamento_id]) continue;
       lembretes[linha.agendamento_id] = {
         status: linha.status as 'enviada' | 'falhou',
@@ -73,12 +81,19 @@ export default async function AgendamentosPage({ searchParams }: { searchParams:
 
   if (comparecidos.length > 0) {
     const supabase = createClient();
-    const { data } = await supabase
-      .from('vendas')
-      .select('id, agendamento_id, valor, descricao, data_venda')
-      .in('agendamento_id', comparecidos.slice(0, 200));
 
-    for (const venda of data ?? []) {
+    // Mesmo motivo do bloco acima: cortar em 200 mostrava a carteira cinza —
+    // "registrar venda" — em atendimentos que ja tinham venda, e o clique
+    // devolvia "ja tem venda registrada" sem o usuario entender por que.
+    const linhas = await emLotes(comparecidos, async (lote) => {
+      const { data } = await supabase
+        .from('vendas')
+        .select('id, agendamento_id, valor, descricao, data_venda')
+        .in('agendamento_id', lote);
+      return data ?? [];
+    });
+
+    for (const venda of linhas) {
       vendas[venda.agendamento_id] = {
         id: venda.id,
         valor: Number(venda.valor),
