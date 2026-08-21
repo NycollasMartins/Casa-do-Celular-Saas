@@ -1,0 +1,145 @@
+name: Rotinas agendadas
+
+# POR QUE ESTE ARQUIVO EXISTE
+# O sistema anuncia duas rotinas — o lembrete da vespera e o resumo semanal —
+# e o README diz que sao "feitas para rodar" uma vez por dia e toda segunda.
+# Nada as executava. Existiam como scripts esperando alguem digitar o comando,
+# o que em producao significa: nunca rodaram.
+#
+# POR QUE AQUI E NAO NUMA FUNCAO DA NETLIFY
+# Os dois scripts sao `.mjs` de topo de arquivo, que executam ao carregar e
+# terminam com process.exit. Uma funcao serverless exigiria refatorar codigo
+# que funciona, so para mudar de gatilho. Aqui eles rodam como sao.
+#
+# LIGAR E DESLIGAR
+# Sem os segredos configurados, os jobs PULAM com um aviso — nada e enviado.
+# Preencher os segredos e o ato deliberado que liga a rotina. E mesmo com
+# eles, os scripts so enviam de verdade quando as credenciais do canal
+# (WhatsApp ou Resend) existem; sem elas, apenas relatam o que fariam.
+#
+# ATENCAO AO SEGREDO
+# SUPABASE_SERVICE_ROLE_KEY ignora o RLS. Colocar essa chave aqui significa
+# confiar nos segredos do GitHub tanto quanto nos da Netlify. Quem preferir
+# nao duplicar deve rodar as rotinas por outro gatilho e deixar este arquivo
+# sem segredos — ele pula sozinho.
+
+on:
+  schedule:
+    # O Brasil nao tem mais horario de verao desde 2019, entao Sao Paulo e
+    # UTC-3 o ano inteiro e estas contas nao escorregam em marco/outubro.
+    #
+    # 21:00 UTC = 18:00 em Sao Paulo. "Fim da tarde", como o README descreve:
+    # o agendador ainda esta na loja se algum envio falhar.
+    - cron: '0 21 * * *'
+    # 11:00 UTC de segunda = 08:00 em Sao Paulo. O franqueado abre a semana
+    # com o numero da semana fechada.
+    - cron: '0 11 * * 1'
+
+  # Permite rodar a mao — inclusive em modo seco, que lista sem enviar.
+  workflow_dispatch:
+    inputs:
+      rotina:
+        description: Qual rotina rodar
+        type: choice
+        options: [lembrete, relatorio]
+        required: true
+      seco:
+        description: Modo seco (lista o que faria, nao envia)
+        type: boolean
+        default: true
+
+jobs:
+  lembrete:
+    name: Lembrete da vespera
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'schedule' || inputs.rotina == 'lembrete'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verificar segredos
+        id: segredos
+        run: |
+          if [ -n "${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" ] && [ -n "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+            echo "presentes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "presentes=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Lembrete pulado: configure NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY em Settings > Secrets."
+          fi
+
+      # Só o necessário para os scripts: eles usam @supabase/supabase-js e
+      # nada do Next.
+      - name: Instalar dependencias
+        if: steps.segredos.outputs.presentes == 'true'
+        run: npm ci
+
+      - name: Rodar
+        if: steps.segredos.outputs.presentes == 'true'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          REMETENTE_EMAIL: ${{ secrets.REMETENTE_EMAIL }}
+          WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+          WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+          WHATSAPP_TEMPLATE_LEMBRETE: ${{ secrets.WHATSAPP_TEMPLATE_LEMBRETE }}
+        run: |
+          if [ "${{ inputs.seco }}" = "true" ]; then
+            npm run lembrete:vespera -- --seco
+          else
+            npm run lembrete:vespera
+          fi
+
+  relatorio:
+    name: Resumo semanal
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # No agendamento, so na execucao de segunda-feira: o cron diario dispara
+    # este workflow todo dia, e sem este filtro o resumo sairia diariamente.
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '0 11 * * 1')
+      || inputs.rotina == 'relatorio'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verificar segredos
+        id: segredos
+        run: |
+          if [ -n "${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" ] && [ -n "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+            echo "presentes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "presentes=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Resumo semanal pulado: configure os segredos em Settings > Secrets."
+          fi
+
+      - name: Instalar dependencias
+        if: steps.segredos.outputs.presentes == 'true'
+        run: npm ci
+
+      - name: Rodar
+        if: steps.segredos.outputs.presentes == 'true'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          REMETENTE_EMAIL: ${{ secrets.REMETENTE_EMAIL }}
+        run: |
+          if [ "${{ inputs.seco }}" = "true" ]; then
+            npm run relatorio:semanal -- --seco
+          else
+            npm run relatorio:semanal
+          fi

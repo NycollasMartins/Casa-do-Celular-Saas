@@ -26,7 +26,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Uma fonte so para as tres pontas: .nvmrc fixa o CI aqui, o build da
+          # Netlify (que le esse arquivo sozinha) e quem usa nvm na maquina.
+          # Repetir o numero em cada lugar e como as versoes divergem.
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Instalar dependencias
@@ -90,7 +93,10 @@ jobs:
       # do projeto — mas precisa do runtime.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Uma fonte so para as tres pontas: .nvmrc fixa o CI aqui, o build da
+          # Netlify (que le esse arquivo sozinha) e quem usa nvm na maquina.
+          # Repetir o numero em cada lugar e como as versoes divergem.
+          node-version-file: .nvmrc
 
       # Chama o script direto, sem Node: ele e bash e psql puros, entao o job
       # nao precisa instalar dependencia nenhuma do projeto.
@@ -116,7 +122,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Uma fonte so para as tres pontas: .nvmrc fixa o CI aqui, o build da
+          # Netlify (que le esse arquivo sozinha) e quem usa nvm na maquina.
+          # Repetir o numero em cada lugar e como as versoes divergem.
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Instalar dependencias

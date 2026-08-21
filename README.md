@@ -28,6 +28,7 @@ franqueados com 10 a 80 lojas cada, sem reescrita.
 - [Metas por agendador](#metas-por-agendador)
 - [Relatório semanal](#relatório-semanal)
 - [Deploy](#deploy)
+- [Rotinas agendadas](#rotinas-agendadas)
 - [Decisões de projeto](#decisões-de-projeto)
 - [Roadmap](#roadmap)
 
@@ -681,9 +682,16 @@ aconteceu.
 **Supabase:** crie o projeto, rode as migrations na ordem acima e ative
 autenticação por e-mail e senha em *Authentication → Providers*.
 
-**Vercel:** conecte o repositório do GitHub, adicione as quatro variáveis de
-ambiente (com `NEXT_PUBLIC_SITE_URL` apontando para o domínio de produção) e
-faça o deploy. Cada push na `main` publica automaticamente.
+**Netlify:** conecte o repositório do GitHub, adicione as quatro variáveis
+de ambiente (com `NEXT_PUBLIC_SITE_URL` apontando para o domínio de
+produção) e faça o deploy. Cada push na `main` publica automaticamente. A
+versão do Node vem do `.nvmrc` — a Netlify lê esse arquivo sozinha, e é o
+mesmo que o CI usa, para o build não depender de qual versão cada ambiente
+escolheu. A Vercel funciona igual; nada aqui é específico de uma delas.
+
+**As rotinas não rodam sozinhas por conta do deploy.** O lembrete da véspera
+e o resumo semanal são scripts, e um deploy não agenda script nenhum — veja
+[Rotinas agendadas](#rotinas-agendadas) abaixo.
 
 **Confira o deploy em `/api/saude`.** Logo depois de publicar, abra essa
 rota no domínio novo. Ela responde `200` quando está tudo pronto e `503`
@@ -742,6 +750,43 @@ bem abaixo do limite da Vercel e da Netlify, mas é custo real em cold start.
 Supabase Logs continua sendo o lugar das queries.
 
 ---
+
+## Rotinas agendadas
+
+O sistema tem duas rotinas: o **lembrete da véspera** (uma vez por dia, fim
+da tarde) e o **resumo semanal** (segunda de manhã). Elas são scripts Node —
+e por um bom tempo foram *só* scripts: nada as executava, então em produção
+nunca rodaram. Publicar a aplicação não agenda nada.
+
+`.github/workflows/rotinas.yml` agenda as duas.
+
+```
+0 21 * * *   →  18:00 em São Paulo, todo dia      →  lembrete da véspera
+0 11 * * 1   →  08:00 em São Paulo, segunda-feira →  resumo semanal
+```
+
+O cron do GitHub é UTC. O Brasil não tem mais horário de verão desde 2019,
+então São Paulo é UTC−3 o ano inteiro e essas contas não escorregam em março
+ou outubro.
+
+**Ficam desligadas até você ligar.** Sem `NEXT_PUBLIC_SUPABASE_URL` e
+`SUPABASE_SERVICE_ROLE_KEY` em *Settings → Secrets*, os jobs pulam com um
+aviso e nada é enviado. E mesmo com eles, os scripts só enviam de verdade
+quando as credenciais do canal existem (`WHATSAPP_ACCESS_TOKEN` ou
+`RESEND_API_KEY`); sem elas, apenas registram o que fariam.
+
+**Para testar antes**, use *Run workflow* na aba Actions: ele pergunta qual
+rotina e oferece **modo seco**, que lista sem enviar.
+
+**Um cuidado com o segredo.** `SUPABASE_SERVICE_ROLE_KEY` ignora o RLS.
+Guardá-la nos segredos do GitHub significa confiar neles tanto quanto nos da
+Netlify. Quem preferir não duplicar a chave deve disparar as rotinas por
+outro gatilho e deixar este workflow sem segredos — ele pula sozinho, sem
+erro.
+
+**Por que aqui e não numa função da Netlify:** os dois scripts executam ao
+carregar e terminam com `process.exit`. Uma função serverless exigiria
+refatorar código que funciona só para trocar o gatilho.
 
 ## Os hooks de `hooks/` não são usados
 
