@@ -100,3 +100,46 @@ export function planejarVinculos({
   plano.abrirParticipacao = lojaEscolhida;
   return plano;
 }
+
+/* ------------------------- Reativacao de acesso ------------------------ */
+
+export interface VinculoEncerrado {
+  id: string;
+  data_fim: string;
+}
+
+/**
+ * Quais vinculos reabrir ao reativar um acesso.
+ *
+ * DEFEITO QUE ISTO CORRIGE
+ * O desligamento encerra TODOS os vinculos de uma vez. A reativacao reabria
+ * so o mais recente — um diretor com cinco participacoes voltava com uma, e
+ * perdia quatro lojas em silencio.
+ *
+ * O criterio e a data: reabre o lote encerrado na ultima data, que e
+ * exatamente o conjunto que o desligamento fechou junto. Vinculos
+ * encerrados antes disso foram encerrados de proposito, por transferencia
+ * ou saida da sociedade, e nao devem voltar.
+ */
+export function selecionarParaReabrir(encerrados: VinculoEncerrado[]): string[] {
+  if (encerrados.length === 0) return [];
+
+  const ultimaData = encerrados.reduce(
+    (maior, item) => (item.data_fim > maior ? item.data_fim : maior),
+    encerrados[0].data_fim
+  );
+
+  return encerrados.filter((item) => item.data_fim === ultimaData).map((item) => item.id);
+}
+
+/**
+ * Qual tabela de vinculo corresponde ao papel.
+ *
+ * Reabrir sem olhar o papel ressuscitaria a lotacao de agendador de quem
+ * hoje e diretor — o mesmo defeito que `planejarVinculos` corrige na edicao.
+ */
+export function tabelaDoVinculo(papel: PapelEditado | 'super_admin'): 'agendadores_lojas' | 'participacoes_societarias' | null {
+  if (papel === 'agendador') return 'agendadores_lojas';
+  if (papel === 'diretor' || papel === 'franqueado') return 'participacoes_societarias';
+  return null;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planejarVinculos } from '@/lib/vinculos';
+import { planejarVinculos, selecionarParaReabrir, tabelaDoVinculo } from '@/lib/vinculos';
 
 const LOJA_A = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
 const LOJA_B = 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb';
@@ -208,5 +208,69 @@ describe('sem loja escolhida', () => {
 
     expect(plano.encerrarParticipacao).toEqual(['p1']);
     expect(plano.encerrarAgendador).toEqual([]);
+  });
+});
+
+describe('selecionarParaReabrir', () => {
+  it('nao devolve nada quando nao ha vinculo encerrado', () => {
+    expect(selecionarParaReabrir([])).toEqual([]);
+  });
+
+  /**
+   * DEFEITO CORRIGIDO: o desligamento encerra TODOS os vinculos de uma vez,
+   * mas a reativacao reabria so o mais recente. Um diretor com cinco
+   * participacoes voltava com uma e perdia quatro lojas em silencio.
+   */
+  it('reabre todos os encerrados no mesmo dia, nao apenas um', () => {
+    const ids = selecionarParaReabrir([
+      { id: 'p1', data_fim: '2026-08-20' },
+      { id: 'p2', data_fim: '2026-08-20' },
+      { id: 'p3', data_fim: '2026-08-20' },
+    ]);
+
+    expect(ids).toEqual(['p1', 'p2', 'p3']);
+  });
+
+  /**
+   * Vinculo encerrado antes do desligamento foi encerrado de proposito —
+   * transferencia, saida da sociedade — e nao deve voltar junto.
+   */
+  it('ignora vinculos encerrados antes do desligamento', () => {
+    const ids = selecionarParaReabrir([
+      { id: 'antigo', data_fim: '2026-03-10' },
+      { id: 'p1', data_fim: '2026-08-20' },
+      { id: 'p2', data_fim: '2026-08-20' },
+    ]);
+
+    expect(ids).toEqual(['p1', 'p2']);
+  });
+
+  it('funciona com um unico vinculo', () => {
+    expect(selecionarParaReabrir([{ id: 'v1', data_fim: '2026-08-20' }])).toEqual(['v1']);
+  });
+
+  it('a ordem de entrada nao altera o lote escolhido', () => {
+    const ids = selecionarParaReabrir([
+      { id: 'p2', data_fim: '2026-08-20' },
+      { id: 'antigo', data_fim: '2025-01-01' },
+      { id: 'p1', data_fim: '2026-08-20' },
+    ]);
+
+    expect(ids.sort()).toEqual(['p1', 'p2']);
+  });
+});
+
+describe('tabelaDoVinculo', () => {
+  it('agendador se liga pela lotacao', () => {
+    expect(tabelaDoVinculo('agendador')).toBe('agendadores_lojas');
+  });
+
+  it('diretor e franqueado se ligam pela sociedade', () => {
+    expect(tabelaDoVinculo('diretor')).toBe('participacoes_societarias');
+    expect(tabelaDoVinculo('franqueado')).toBe('participacoes_societarias');
+  });
+
+  it('super admin nao tem vinculo de loja', () => {
+    expect(tabelaDoVinculo('super_admin')).toBeNull();
   });
 });

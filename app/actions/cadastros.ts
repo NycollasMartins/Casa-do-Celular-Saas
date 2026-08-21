@@ -13,7 +13,7 @@ import {
   usuarioEdicaoSchema,
   usuarioSchema,
 } from '@/lib/validations/cadastros';
-import { planejarVinculos } from '@/lib/vinculos';
+import { planejarVinculos, selecionarParaReabrir, tabelaDoVinculo } from '@/lib/vinculos';
 import type { ResultadoAction } from './agendamentos';
 
 function objeto(formData: FormData): Record<string, string> {
@@ -294,35 +294,33 @@ export async function definirStatusUsuario(
   } else {
     // Reativar so o status devolveria o login sem devolver a lotacao: o
     // desligamento fechou os vinculos, e sem loja ativa o RLS entrega tela
-    // vazia. Reabre o ultimo vinculo encerrado para restaurar o estado.
-    const { data: vinculo } = await supabase
-      .from('agendadores_lojas')
-      .select('id')
-      .eq('usuario_id', id)
-      .not('data_fim', 'is', null)
-      .order('data_fim', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // vazia.
+    //
+    // Reabre o LOTE inteiro encerrado na ultima data — o mesmo que o
+    // desligamento fechou junto. Reabrir so o mais recente fazia um diretor
+    // de cinco lojas voltar com uma, perdendo quatro em silencio.
+    const { data: alvo } = await supabase.from('usuarios').select('role').eq('id', id).maybeSingle();
+    const tabela = tabelaDoVinculo(alvo?.role ?? 'agendador');
 
-    if (vinculo) {
-      await supabase.from('agendadores_lojas').update({ data_fim: null }).eq('id', vinculo.id);
-    }
+    if (tabela) {
+      const { data: encerrados } = await supabase
+        .from(tabela)
+        .select('id, data_fim')
+        .eq('usuario_id', id)
+        .not('data_fim', 'is', null);
 
-    const { data: participacao } = await supabase
-      .from('participacoes_societarias')
-      .select('id')
-      .eq('usuario_id', id)
-      .not('data_fim', 'is', null)
-      .order('data_fim', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      const paraReabrir = selecionarParaReabrir(
+        (encerrados ?? []).map((linha) => ({ id: linha.id, data_fim: linha.data_fim as string }))
+      );
 
-    if (participacao) {
-      await supabase.from('participacoes_societarias').update({ data_fim: null }).eq('id', participacao.id);
+      if (paraReabrir.length > 0) {
+        await supabase.from(tabela).update({ data_fim: null }).in('id', paraReabrir);
+      }
     }
   }
 
   revalidatePath('/dashboard/usuarios');
+  revalidatePath('/dashboard/participacoes');
   revalidatePath('/dashboard');
   return { sucesso: true, mensagem: status === 'inativo' ? 'Acesso encerrado.' : 'Acesso reativado.' };
 }
