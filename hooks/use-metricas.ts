@@ -3,7 +3,17 @@
 import { useEffect, useState } from 'react';
 import type { FiltroMetricas, ResumoMetricas } from '@/lib/types/metricas';
 
-/** Consome /api/metricas/resumo. Use quando os filtros mudam sem navegacao. */
+/**
+ * Consome /api/metricas/resumo. Use quando os filtros mudam sem navegacao.
+ *
+ * NAO E USADO POR NENHUMA TELA HOJE: o dashboard calcula no servidor. Fica
+ * para telas que atualizem sem recarregar a rota.
+ *
+ * O `resposta.ok` abaixo depende de a API devolver 401 em JSON quando a
+ * sessao expira. Ate ser corrigido, o middleware redirecionava /api/* para o
+ * login, o fetch seguia o redirect e recebia HTML com status 200 — o `ok`
+ * dava true e o `.json()` estourava com "Unexpected token '<'".
+ */
 export function useMetricas(filtros: FiltroMetricas = {}) {
   const [metricas, setMetricas] = useState<ResumoMetricas | null>(null);
   const [carregando, setCarregando] = useState(true);

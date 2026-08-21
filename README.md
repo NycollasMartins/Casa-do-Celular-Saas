@@ -717,6 +717,25 @@ Supabase Logs continua sendo o lugar das queries.
 
 ---
 
+## Os hooks de `hooks/` não são usados
+
+`useAgendamentos`, `useLojas`, `useMetricas` e `useUsuarios` existem e
+**nenhuma tela os usa**. As páginas buscam no servidor, que é mais simples e
+não expõe a consulta ao cliente.
+
+Estão marcados como tal no topo de cada arquivo, porque código morto que
+parece pronto é uma armadilha: não recebe correção quando o resto muda. Dois
+exemplos concretos deste repositório — o `useMetricas` carregou por semanas
+o efeito do redirect de `/api/*`, corrigido só quando o middleware mudou; e
+o `useAgendamentos` recarregava a lista inteira a cada evento de tempo real,
+sem agrupar, o que com algumas telas abertas transformaria uma rajada de
+inserções em dezenas de consultas.
+
+O segundo foi corrigido. Se a tela de acompanhamento ao vivo não estiver nos
+planos, o mais honesto é apagar os quatro.
+
+---
+
 ## Decisões de projeto
 
 Onde o briefing pedia duas coisas ou onde o caminho óbvio tinha um problema,

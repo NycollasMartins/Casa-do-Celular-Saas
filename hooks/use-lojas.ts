@@ -9,6 +9,10 @@ export type LojaResumo = Pick<Loja, 'id' | 'nome' | 'codigo_loja' | 'cidade' | '
 /**
  * Lojas visiveis para o usuario logado.
  * O filtro por papel e feito pelo RLS, nao aqui.
+ *
+ * NAO E USADO POR NENHUMA TELA HOJE: as paginas usam
+ * `buscarLojasDoUsuario` no servidor. Fica para telas que precisem
+ * recarregar sem navegacao.
  */
 export function useLojas() {
   const [lojas, setLojas] = useState<LojaResumo[]>([]);

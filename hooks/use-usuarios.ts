@@ -4,7 +4,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Usuario, UserRole } from '@/lib/types/database';
 
-/** Usuarios visiveis para quem esta logado (RLS aplica o recorte). */
+/** Usuarios visiveis para quem esta logado (RLS aplica o recorte).
+ *
+ * NAO E USADO POR NENHUMA TELA HOJE: a Equipe busca no servidor. Fica para
+ * telas que precisem recarregar a lista sem navegacao.
+ */
 export function useUsuarios(role?: UserRole) {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [carregando, setCarregando] = useState(true);
