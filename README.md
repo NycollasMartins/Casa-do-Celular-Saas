@@ -356,6 +356,21 @@ usuários do seed não existem, em vez de falharem em vermelho. É uma trava pro
 alguém aponte o `.env.local` para produção e saia escrevendo. Para rodá-las,
 execute antes `npm run seed:auth` e a migration de seed.
 
+### Contrato entre os scripts e `lib/`
+
+Os scripts de rotina rodam com `node` puro, sem build, e por isso não
+importam de `lib/`, que é TypeScript. O Node 24 executa `.ts` nativamente,
+mas o CI e os ambientes de cron costumam estar em versões mais antigas —
+quebrar a rotina noturna para eliminar duplicação seria um mau negócio.
+
+A duplicação existe, então, mas em **um** lugar: `scripts/compartilhado.mjs`.
+E `tests/unit/compartilhado.test.ts` executa as duas implementações nos
+mesmos casos e compara. Se divergirem, o teste falha.
+
+Não é precaução teórica. A cópia da retenção já tinha divergido — usava
+`setMonth`, que transborda — e o relatório semanal calculava a taxa de
+comparecimento com um denominador diferente do dashboard.
+
 ### Verificação local das migrations
 
 ```bash

@@ -18,6 +18,14 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync } from 'node:fs';
+import {
+  FUSO_LOJA as FUSO,
+  dataDeAmanha,
+  diaEMes,
+  montarMensagemLembrete as montarMensagem,
+  normalizarTelefoneBr,
+  canalDisponivel,
+} from './compartilhado.mjs';
 
 try {
   for (const linha of readFileSync('.env.local', 'utf8').split('\n')) {
@@ -53,66 +61,6 @@ const argumentos = process.argv.slice(2);
 const seco = argumentos.includes('--seco');
 const indiceData = argumentos.indexOf('--data');
 const dataForcada = indiceData >= 0 ? argumentos[indiceData + 1] : null;
-
-const FUSO = 'America/Sao_Paulo';
-
-/** Mesma logica de lib/notificacoes.ts. Ver o comentario de fuso de la. */
-function dataDeAmanha(agora = new Date()) {
-  const hojeLocal = new Intl.DateTimeFormat('en-CA', {
-    timeZone: FUSO,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(agora);
-
-  const base = new Date(`${hojeLocal}T12:00:00Z`);
-  base.setUTCDate(base.getUTCDate() + 1);
-  return base.toISOString().slice(0, 10);
-}
-
-function diaEMes(iso) {
-  const [, mes, dia] = iso.slice(0, 10).split('-');
-  return `${dia}/${mes}`;
-}
-
-function montarMensagem(destinatario) {
-  const primeiroNome = destinatario.cliente_nome.trim().split(/\s+/)[0];
-  return {
-    assunto: `Seu atendimento na ${destinatario.loja_nome} e amanha`,
-    texto:
-      `Ola, ${primeiroNome}! Passando para lembrar do seu atendimento na ` +
-      `${destinatario.loja_nome}, amanha (${diaEMes(destinatario.data_agendamento)}). ` +
-      `Se precisar remarcar, e so responder esta mensagem. Ate breve!`,
-  };
-}
-
-/** Espelha lib/whatsapp.ts. Ver la o porque da lista de DDDs. */
-const DDDS_VALIDOS = new Set([
-  11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 24, 27, 28,
-  31, 32, 33, 34, 35, 37, 38, 41, 42, 43, 44, 45, 46, 47, 48, 49,
-  51, 53, 54, 55, 61, 62, 63, 64, 65, 66, 67, 68, 69,
-  71, 73, 74, 75, 77, 79, 81, 82, 83, 84, 85, 86, 87, 88, 89,
-  91, 92, 93, 94, 95, 96, 97, 98, 99,
-]);
-
-function normalizarTelefoneBr(entrada) {
-  let digitos = (entrada ?? '').replace(/\D/g, '');
-  if (!digitos) return null;
-
-  if (digitos.startsWith('0055')) digitos = digitos.slice(2);
-  if (digitos.length === 13 && digitos.startsWith('55')) digitos = digitos.slice(2);
-  else if (digitos.length === 12 && digitos.startsWith('55')) digitos = digitos.slice(2);
-  if (digitos.length === 12 && digitos.startsWith('0')) digitos = digitos.slice(1);
-  if (digitos.length === 11 && digitos.startsWith('0')) digitos = digitos.slice(1);
-
-  if (digitos.length !== 10 && digitos.length !== 11) return null;
-  if (!DDDS_VALIDOS.has(Number(digitos.slice(0, 2)))) return null;
-
-  const assinante = digitos.slice(2);
-  if (assinante.length === 9 ? !assinante.startsWith('9') : !/^[2-5]/.test(assinante)) return null;
-
-  return `55${digitos}`;
-}
 
 /**
  * Template, nao texto livre: a Meta so permite texto livre dentro da janela
@@ -206,12 +154,8 @@ if (!destinatarios || destinatarios.length === 0) {
 
 console.log(`${destinatarios.length} pessoa(s) a lembrar.\n`);
 
-/** WhatsApp na frente: e onde a pessoa efetivamente le. */
-function escolherCanal(item) {
-  if (temWhatsapp && item.cliente_telefone) return 'whatsapp';
-  if (temEmail && item.cliente_email) return 'email';
-  return 'registro';
-}
+const escolherCanal = (item) =>
+  canalDisponivel(item, { whatsapp: temWhatsapp, email: temEmail });
 
 if (seco) {
   for (const item of destinatarios) {

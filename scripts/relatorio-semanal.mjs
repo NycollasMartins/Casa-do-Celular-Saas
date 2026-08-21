@@ -16,6 +16,13 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync } from 'node:fs';
+import {
+  FUSO_LOJA as FUSO,
+  diaEMes,
+  formatarBrl as brl,
+  semanaAnterior,
+  somarDias,
+} from './compartilhado.mjs';
 
 try {
   for (const linha of readFileSync('.env.local', 'utf8').split('\n')) {
@@ -43,46 +50,6 @@ const argumentos = process.argv.slice(2);
 const seco = argumentos.includes('--seco');
 const indiceSemana = argumentos.indexOf('--semana');
 const semanaForcada = indiceSemana >= 0 ? argumentos[indiceSemana + 1] : null;
-
-const FUSO = 'America/Sao_Paulo';
-
-/** Espelha hojeNaLoja de lib/semana.ts. Ver la os comentarios de fuso. */
-function hojeNaLoja(agora = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: FUSO,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(agora);
-}
-
-function somarDias(iso, dias) {
-  const base = new Date(`${iso}T12:00:00Z`);
-  base.setUTCDate(base.getUTCDate() + dias);
-  return base.toISOString().slice(0, 10);
-}
-
-function segundaFeiraDa(iso) {
-  const dia = new Date(`${iso}T12:00:00Z`).getUTCDay();
-  const diaIso = dia === 0 ? 7 : dia;
-  return somarDias(iso, -(diaIso - 1));
-}
-
-function semanaAnterior(agora = new Date()) {
-  const inicio = somarDias(segundaFeiraDa(hojeNaLoja(agora)), -7);
-  return { inicio, fim: somarDias(inicio, 6) };
-}
-
-function diaEMes(iso) {
-  const [, mes, dia] = iso.slice(0, 10).split('-');
-  return `${dia}/${mes}`;
-}
-
-function brl(valor) {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
-    Number(valor ?? 0)
-  );
-}
 
 function pct(numerador, denominador) {
   if (!denominador) return '0,0%';
