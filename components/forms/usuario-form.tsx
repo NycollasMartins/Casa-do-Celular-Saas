@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MensagemErro, propsDeValidacao } from '@/components/ui/campo';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usuarioSchema, type UsuarioInput } from '@/lib/validations/cadastros';
 import { criarUsuario } from '@/app/actions/cadastros';
@@ -54,14 +55,20 @@ export function UsuarioForm({ lojas, onSalvo }: Props) {
     <form onSubmit={handleSubmit(aoEnviar)} className="grid grid-cols-1 gap-4 sm:grid-cols-2" noValidate>
       <div className="space-y-1.5">
         <Label htmlFor="nome">Nome</Label>
-        <Input id="nome" placeholder="Ana Souza" {...register('nome')} />
-        {errors.nome ? <p className="text-xs text-danger">{errors.nome.message}</p> : null}
+        <Input
+          id="nome" placeholder="Ana Souza" {...register('nome')}
+          {...propsDeValidacao('nome', errors.nome?.message)}
+        />
+        <MensagemErro id="nome" mensagem={errors.nome?.message} />
       </div>
 
       <div className="space-y-1.5">
         <Label htmlFor="email">E-mail de acesso</Label>
-        <Input id="email" type="email" placeholder="ana@franqueado.com.br" {...register('email')} />
-        {errors.email ? <p className="text-xs text-danger">{errors.email.message}</p> : null}
+        <Input
+          id="email" type="email" placeholder="ana@franqueado.com.br" {...register('email')}
+          {...propsDeValidacao('email', errors.email?.message)}
+        />
+        <MensagemErro id="email" mensagem={errors.email?.message} />
       </div>
 
       <div className="space-y-1.5">
@@ -81,7 +88,7 @@ export function UsuarioForm({ lojas, onSalvo }: Props) {
       <div className="space-y-1.5">
         <Label htmlFor="loja_id">{role === 'agendador' ? 'Loja de atuacao' : 'Loja da participacao'}</Label>
         <Select value={watch('loja_id')} onValueChange={(valor) => setValue('loja_id', valor)}>
-          <SelectTrigger id="loja_id">
+          <SelectTrigger id="loja_id" {...propsDeValidacao('loja_id', errors.loja_id?.message)}>
             <SelectValue placeholder="Escolha a loja" />
           </SelectTrigger>
           <SelectContent>
@@ -92,7 +99,7 @@ export function UsuarioForm({ lojas, onSalvo }: Props) {
             ))}
           </SelectContent>
         </Select>
-        {errors.loja_id ? <p className="text-xs text-danger">{errors.loja_id.message}</p> : null}
+        <MensagemErro id="loja_id" mensagem={errors.loja_id?.message} />
       </div>
 
       {role !== 'agendador' ? (

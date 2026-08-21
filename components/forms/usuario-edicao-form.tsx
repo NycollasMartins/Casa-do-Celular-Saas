@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MensagemErro, propsDeValidacao } from '@/components/ui/campo';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usuarioEdicaoSchema, type UsuarioEdicaoInput } from '@/lib/validations/cadastros';
 import { atualizarUsuario } from '@/app/actions/cadastros';
@@ -61,8 +62,11 @@ export function UsuarioEdicaoForm({ usuario, lojas, lojaAtualId, onSalvo }: Prop
     <form onSubmit={handleSubmit(aoEnviar)} className="grid grid-cols-1 gap-4 sm:grid-cols-2" noValidate>
       <div className="space-y-1.5">
         <Label htmlFor="edit-nome">Nome</Label>
-        <Input id="edit-nome" {...register('nome')} />
-        {errors.nome ? <p className="text-xs text-danger">{errors.nome.message}</p> : null}
+        <Input
+          id="edit-nome" {...register('nome')}
+          {...propsDeValidacao('edit-nome', errors.nome?.message)}
+        />
+        <MensagemErro id="edit-nome" mensagem={errors.nome?.message} />
       </div>
 
       <div className="space-y-1.5">
@@ -88,7 +92,7 @@ export function UsuarioEdicaoForm({ usuario, lojas, lojaAtualId, onSalvo }: Prop
       <div className="space-y-1.5">
         <Label htmlFor="edit-loja">{role === 'agendador' ? 'Loja de atuacao' : 'Loja da participacao'}</Label>
         <Select value={watch('loja_id')} onValueChange={(valor) => setValue('loja_id', valor)}>
-          <SelectTrigger id="edit-loja">
+          <SelectTrigger id="edit-loja" {...propsDeValidacao('edit-loja', errors.loja_id?.message)}>
             <SelectValue placeholder="Escolha a loja" />
           </SelectTrigger>
           <SelectContent>
@@ -99,7 +103,7 @@ export function UsuarioEdicaoForm({ usuario, lojas, lojaAtualId, onSalvo }: Prop
             ))}
           </SelectContent>
         </Select>
-        {errors.loja_id ? <p className="text-xs text-danger">{errors.loja_id.message}</p> : null}
+        <MensagemErro id="edit-loja" mensagem={errors.loja_id?.message} />
         <p className="text-xs text-slate-400">
           {role === 'agendador'
             ? 'Trocar de loja encerra a lotacao atual e abre uma nova, preservando o historico.'

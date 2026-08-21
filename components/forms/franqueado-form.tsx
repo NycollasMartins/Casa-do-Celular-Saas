@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MensagemErro, propsDeValidacao } from '@/components/ui/campo';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { franqueadoSchema, type FranqueadoInput } from '@/lib/validations/cadastros';
 import { salvarFranqueado } from '@/app/actions/cadastros';
@@ -51,20 +52,29 @@ export function FranqueadoForm({ franqueado, onSalvo }: { franqueado?: Franquead
     <form onSubmit={handleSubmit(aoEnviar)} className="grid grid-cols-1 gap-4 sm:grid-cols-2" noValidate>
       <div className="space-y-1.5 sm:col-span-2">
         <Label htmlFor="nome">Razao social</Label>
-        <Input id="nome" placeholder="Franqueado Principal Ltda" {...register('nome')} />
-        {errors.nome ? <p className="text-xs text-danger">{errors.nome.message}</p> : null}
+        <Input
+          id="nome" placeholder="Franqueado Principal Ltda" {...register('nome')}
+          {...propsDeValidacao('nome', errors.nome?.message)}
+        />
+        <MensagemErro id="nome" mensagem={errors.nome?.message} />
       </div>
 
       <div className="space-y-1.5">
         <Label htmlFor="cnpj">CNPJ</Label>
-        <Input id="cnpj" placeholder="00.000.000/0001-00" {...register('cnpj')} />
-        {errors.cnpj ? <p className="text-xs text-danger">{errors.cnpj.message}</p> : null}
+        <Input
+          id="cnpj" placeholder="00.000.000/0001-00" {...register('cnpj')}
+          {...propsDeValidacao('cnpj', errors.cnpj?.message)}
+        />
+        <MensagemErro id="cnpj" mensagem={errors.cnpj?.message} />
       </div>
 
       <div className="space-y-1.5">
         <Label htmlFor="email_contato">E-mail de contato</Label>
-        <Input id="email_contato" type="email" {...register('email_contato')} />
-        {errors.email_contato ? <p className="text-xs text-danger">{errors.email_contato.message}</p> : null}
+        <Input
+          id="email_contato" type="email" {...register('email_contato')}
+          {...propsDeValidacao('email_contato', errors.email_contato?.message)}
+        />
+        <MensagemErro id="email_contato" mensagem={errors.email_contato?.message} />
       </div>
 
       <div className="space-y-1.5">

@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MensagemErro } from '@/components/ui/campo';
 import { definirNovaSenha } from '@/app/actions/auth';
 
 export function NovaSenhaForm() {
@@ -39,24 +40,41 @@ export function NovaSenhaForm() {
     <form onSubmit={aoEnviar} className="space-y-4" noValidate>
       <div className="space-y-1.5">
         <Label htmlFor="senha">Nova senha</Label>
-        <Input id="senha" name="senha" type="password" autoComplete="new-password" required />
+        {/*
+          Este campo tem dois textos possiveis: a dica de formato e o erro.
+          O leitor de tela deve anunciar um OU outro, entao o
+          aria-describedby aponta para o que estiver visivel.
+        */}
+        <Input
+          id="senha"
+          name="senha"
+          type="password"
+          autoComplete="new-password"
+          required
+          aria-invalid={erros.senha?.[0] ? true : undefined}
+          aria-describedby={erros.senha?.[0] ? 'senha-erro' : 'senha-dica'}
+        />
         {erros.senha ? (
-          <p role="alert" className="text-sm text-danger">
-            {erros.senha[0]}
-          </p>
+          <MensagemErro id="senha" mensagem={erros.senha[0]} />
         ) : (
-          <p className="text-sm text-slate-500">Ao menos 8 caracteres, com letra e numero.</p>
+          <p id="senha-dica" className="text-sm text-slate-500">
+            Ao menos 8 caracteres, com letra e numero.
+          </p>
         )}
       </div>
 
       <div className="space-y-1.5">
         <Label htmlFor="confirmacao">Repita a nova senha</Label>
-        <Input id="confirmacao" name="confirmacao" type="password" autoComplete="new-password" required />
-        {erros.confirmacao ? (
-          <p role="alert" className="text-sm text-danger">
-            {erros.confirmacao[0]}
-          </p>
-        ) : null}
+        <Input
+          id="confirmacao"
+          name="confirmacao"
+          type="password"
+          autoComplete="new-password"
+          required
+          aria-invalid={erros.confirmacao?.[0] ? true : undefined}
+          aria-describedby={erros.confirmacao?.[0] ? 'confirmacao-erro' : undefined}
+        />
+        <MensagemErro id="confirmacao" mensagem={erros.confirmacao?.[0]} />
       </div>
 
       {erro ? (

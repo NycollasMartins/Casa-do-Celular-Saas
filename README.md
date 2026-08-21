@@ -700,6 +700,13 @@ falhar: abre no destino e, se o encerramento da origem falhar, desfaz a
 abertura. O pior estado possível é "continua na origem", nunca "perdeu as
 duas".
 
+**Erro de formulário ligado ao campo.** `aria-describedby` e `aria-invalid`
+em todos os seis formulários, via `components/ui/campo.tsx`. Sem isso a
+mensagem é um texto vermelho solto abaixo do input: quem enxerga entende
+pela proximidade, quem usa leitor de tela tabula até o campo e não ouve
+nada. O `role="alert"` cobre o outro momento — quando o erro aparece após o
+envio, sem o foco estar no campo.
+
 **Filtro de data validado antes de virar consulta.** Os parâmetros `inicio`
 e `fim` vêm da query string, então chegam como o usuário — ou um link
 quebrado — quiser. `?inicio=abc` ia direto para o `gte` e derrubava a
