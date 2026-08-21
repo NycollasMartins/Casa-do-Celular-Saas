@@ -664,6 +664,16 @@ um franqueado de 80 — cabe em memória com folga. Se a rede inteira crescer
 muito, troque `calcularMetricas` por uma RPC que agrega no Postgres; o resto
 do código não muda.
 
+Essa leitura **pagina até o fim**, sem `.limit()`. A versão anterior pedia
+10.000 registros e cortava em silêncio: com 18 agendadores a 10 atendimentos
+por dia, o filtro de 90 dias passa de 16 mil, e o dashboard exibiria a conta
+de 10 mil deles sem nenhum sinal de que faltava dado. Acima de 50.000 a
+leitura levanta erro pedindo um intervalo menor — número errado que parece
+certo é pior que erro visível.
+
+A tabela continua carregando uma janela, porque pagina no cliente. A
+diferença é que agora ela **diz** quando a janela encheu.
+
 **Rate limit com duas implementações.** Os 100 req/min por usuário usam
 Upstash Redis quando `UPSTASH_REDIS_REST_URL` e `UPSTASH_REDIS_REST_TOKEN`
 existem, e caem para um contador em memória quando não. O fallback também

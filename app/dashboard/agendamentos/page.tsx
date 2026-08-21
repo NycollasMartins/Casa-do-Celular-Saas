@@ -16,12 +16,20 @@ import type { Venda } from '@/lib/types/database';
 
 export const metadata = { title: 'Agendamentos · Casa do Celular' };
 
+/**
+ * A tabela pagina no cliente, entao carrega uma janela em vez do periodo
+ * inteiro. Quando a janela enche, a tela DIZ que encheu — antes o rotulo
+ * afirmava "N registros no periodo" mostrando o teto, o que e mentira
+ * quando ha mais.
+ */
+const TETO_DA_TABELA = 1000;
+
 export default async function AgendamentosPage({ searchParams }: { searchParams: ParametrosBusca }) {
   const usuario = await exigirUsuario();
   const filtros = lerFiltros(searchParams);
 
   const [agendamentos, lojas, agendadores] = await Promise.all([
-    buscarAgendamentos({ ...filtros, limite: 1000 }),
+    buscarAgendamentos({ ...filtros, limite: TETO_DA_TABELA }),
     buscarLojasDoUsuario(),
     buscarAgendadoresDoUsuario(),
   ]);
@@ -86,7 +94,9 @@ export default async function AgendamentosPage({ searchParams }: { searchParams:
         <div>
           <h1 className="text-2xl font-semibold text-ink">Agendamentos</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {agendamentos.length} registros no periodo selecionado.
+            {agendamentos.length >= TETO_DA_TABELA
+              ? `Mostrando os ${TETO_DA_TABELA.toLocaleString('pt-BR')} mais recentes. Refine o periodo ou a loja para ver o resto.`
+              : `${agendamentos.length} registros no periodo selecionado.`}
           </p>
         </div>
 

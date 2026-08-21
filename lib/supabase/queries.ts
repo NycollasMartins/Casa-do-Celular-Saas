@@ -84,37 +84,89 @@ interface FiltroAgendamentos extends FiltroMetricas {
 }
 
 /** Lista de agendamentos com loja e agendador (um unico join, sem N+1). */
+const TAMANHO_PAGINA = 1000;
+
+/**
+ * Teto de seguranca da leitura completa. Acima disso, agregar no banco
+ * deixa de ser otimizacao e vira necessidade — carregar centenas de
+ * milhares de linhas para somar quatro numeros derrubaria a pagina.
+ *
+ * Estourar o teto levanta erro de proposito. A alternativa seria devolver
+ * um recorte, que e como o defeito abaixo existia: numero errado sem aviso.
+ */
+const TETO_LEITURA = 50_000;
+
 export async function buscarAgendamentos(
   filtros: FiltroAgendamentos = {}
 ): Promise<AgendamentoComRelacoes[]> {
   const supabase = createClient();
   const { inicio, fim } = resolverIntervalo(filtros);
 
-  let query = supabase
-    .from('agendamentos')
-    .select(
-      `*,
-       loja:lojas!agendamentos_loja_id_fkey (id, nome, codigo_loja),
-       agendador:usuarios!agendamentos_agendador_id_fkey (id, nome)`
-    )
-    .gte('data_agendamento', inicio)
-    .lte('data_agendamento', fim)
-    .order('data_agendamento', { ascending: false })
-    .limit(filtros.limite ?? 1000);
+  function montarConsulta() {
+    let query = supabase
+      .from('agendamentos')
+      .select(
+        `*,
+         loja:lojas!agendamentos_loja_id_fkey (id, nome, codigo_loja),
+         agendador:usuarios!agendamentos_agendador_id_fkey (id, nome)`
+      )
+      .gte('data_agendamento', inicio)
+      .lte('data_agendamento', fim)
+      .order('data_agendamento', { ascending: false })
+      // Desempate estavel: sem ele, duas linhas da mesma data podem trocar
+      // de pagina entre requisicoes e aparecer duas vezes ou nenhuma.
+      .order('id', { ascending: false });
 
-  if (filtros.lojaId) query = query.eq('loja_id', filtros.lojaId);
-  if (filtros.agendadorId) query = query.eq('agendador_id', filtros.agendadorId);
-  if (filtros.status?.length) query = query.in('status', filtros.status);
-  if (filtros.busca) {
-    query = query.or(
-      `cliente_nome.ilike.%${filtros.busca}%,cliente_telefone.ilike.%${filtros.busca}%`
-    );
+    if (filtros.lojaId) query = query.eq('loja_id', filtros.lojaId);
+    if (filtros.agendadorId) query = query.eq('agendador_id', filtros.agendadorId);
+    if (filtros.status?.length) query = query.in('status', filtros.status);
+    if (filtros.busca) {
+      query = query.or(
+        `cliente_nome.ilike.%${filtros.busca}%,cliente_telefone.ilike.%${filtros.busca}%`
+      );
+    }
+    return query;
   }
 
-  const { data, error } = await query;
-  if (error) throw new Error(`Nao foi possivel carregar os agendamentos: ${error.message}`);
+  // Com `limite`, le so o pedido — e o caso da tabela, que pagina no
+  // cliente. Sem `limite`, le TUDO, paginando.
+  //
+  // DEFEITO QUE ISTO CORRIGE
+  // As metricas pediam `limite: 10_000` e o `.limit()` cortava em silencio.
+  // Com 18 agendadores a 10 atendimentos por dia, o filtro de 90 dias passa
+  // de 16 mil registros: o dashboard mostraria a conta de 10 mil deles, sem
+  // nenhum sinal de que faltava dado. Numero errado que parece certo e pior
+  // que erro visivel.
+  if (filtros.limite !== undefined) {
+    const { data, error } = await montarConsulta().limit(filtros.limite);
+    if (error) throw new Error(`Nao foi possivel carregar os agendamentos: ${error.message}`);
+    return (data ?? []) as unknown as AgendamentoComRelacoes[];
+  }
 
-  return (data ?? []) as unknown as AgendamentoComRelacoes[];
+  const linhas: unknown[] = [];
+
+  for (let inicioPagina = 0; ; inicioPagina += TAMANHO_PAGINA) {
+    const { data, error } = await montarConsulta().range(
+      inicioPagina,
+      inicioPagina + TAMANHO_PAGINA - 1
+    );
+
+    if (error) throw new Error(`Nao foi possivel carregar os agendamentos: ${error.message}`);
+
+    const pagina = data ?? [];
+    linhas.push(...pagina);
+
+    if (pagina.length < TAMANHO_PAGINA) break;
+
+    if (linhas.length >= TETO_LEITURA) {
+      throw new Error(
+        `O periodo selecionado tem mais de ${TETO_LEITURA.toLocaleString('pt-BR')} atendimentos. ` +
+          'Escolha um intervalo menor ou filtre por loja.'
+      );
+    }
+  }
+
+  return linhas as AgendamentoComRelacoes[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -239,7 +291,7 @@ async function buscarVendasDosAgendamentos(
  */
 export async function calcularMetricas(filtros: FiltroMetricas = {}): Promise<ResumoMetricas> {
   const { inicio, fim } = resolverIntervalo(filtros);
-  const registros = await buscarAgendamentos({ ...filtros, limite: 10_000 });
+  const registros = await buscarAgendamentos(filtros);
 
   const totalContatos = registros.length;
   const totalAgendados = registros.filter((r) => STATUS_AGENDADOS.includes(r.status)).length;
@@ -274,7 +326,7 @@ export async function calcularMetricas(filtros: FiltroMetricas = {}): Promise<Re
 
 /** Metricas consolidadas por loja (usado em Relatorios e no super admin). */
 export async function calcularMetricasPorLoja(filtros: FiltroMetricas = {}) {
-  const registros = await buscarAgendamentos({ ...filtros, limite: 10_000 });
+  const registros = await buscarAgendamentos(filtros);
   const vendas = await buscarVendasDosAgendamentos(registros.map((r) => r.id));
 
   const mapa = new Map<
@@ -341,7 +393,6 @@ export async function desempenhoNaCompetencia(competencia: string) {
     periodo: 'personalizado',
     dataInicio: competencia,
     dataFim: fimDaCompetencia(competencia),
-    limite: 10_000,
   });
 
   const vendas = await buscarVendasDosAgendamentos(registros.map((r) => r.id));
