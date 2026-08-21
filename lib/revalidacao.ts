@@ -63,6 +63,13 @@ const GRUPOS = {
 
 export type GrupoRevalidacao = keyof typeof GRUPOS;
 
+/**
+ * Exportado para o teste conferir que cada caminho corresponde a uma rota
+ * de verdade. `revalidatePath` com caminho inexistente nao levanta erro —
+ * simplesmente nao faz nada, e a tela continua mostrando dado velho.
+ */
+export const TELAS_POR_GRUPO: Record<GrupoRevalidacao, readonly string[]> = GRUPOS;
+
 export function revalidar(...grupos: GrupoRevalidacao[]): void {
   const telas = new Set(grupos.flatMap((grupo) => GRUPOS[grupo]));
   for (const tela of telas) revalidatePath(tela);
