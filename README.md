@@ -700,6 +700,13 @@ falhar: abre no destino e, se o encerramento da origem falhar, desfaz a
 abertura. O pior estado possível é "continua na origem", nunca "perdeu as
 duas".
 
+**A janela de datas é calculada no fuso das lojas.** `data_agendamento` é
+um `date` sem fuso, preenchido em Brasília, mas o servidor da Vercel e da
+Netlify roda em UTC. Às 22h o UTC já virou o dia, e a janela de 30 dias
+escorregava: virava 23/07–21/08 em vez de 22/07–20/08, descartando um dia
+real de dados e incluindo um que ainda não aconteceu. O mesmo usuário via
+totais diferentes às 20h e às 22h.
+
 **Quem faltou continua contando como visita marcada.** `nao_compareceu`
 entra em `totalAgendados`: a pessoa marcou, e não ter ido não desfaz o
 agendamento. A definição anterior o excluía, então quem faltou sumia do

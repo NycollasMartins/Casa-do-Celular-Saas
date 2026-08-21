@@ -1,9 +1,10 @@
-import { format, parseISO, subDays } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { createClient } from '@/lib/supabase/server';
 import { STATUS_LABEL } from '@/lib/utils';
 import { ticketMedio } from '@/lib/dinheiro';
 import { competenciaDe, fimDaCompetencia } from '@/lib/metas';
+import { FUSO_LOJA } from '@/lib/semana';
 import type {
   Agendamento,
   AgendamentoComRelacoes,
@@ -27,18 +28,38 @@ const DIAS_POR_PERIODO: Record<Exclude<Periodo, 'personalizado'>, number> = {
 };
 
 /** Converte o filtro de periodo em um intervalo de datas ISO (YYYY-MM-DD). */
-export function resolverIntervalo(filtros: FiltroMetricas): { inicio: string; fim: string } {
-  const hoje = new Date();
-
+/**
+ * Janela de datas do filtro, no fuso das lojas.
+ *
+ * `data_agendamento` e um `date` sem fuso, preenchido no horario de
+ * Brasilia. O servidor da Vercel e da Netlify roda em UTC — as 22h de
+ * Brasilia, o UTC ja virou o dia. Calcular "hoje" por UTC fazia a janela de
+ * 30 dias escorregar: as 22h ela virava 23/07 a 21/08 em vez de 22/07 a
+ * 20/08, descartando um dia real de dados e incluindo um que ainda nao
+ * aconteceu. O mesmo usuario via totais diferentes as 20h e as 22h.
+ */
+export function resolverIntervalo(
+  filtros: FiltroMetricas,
+  agora = new Date()
+): { inicio: string; fim: string } {
   if (filtros.periodo === 'personalizado' && filtros.dataInicio && filtros.dataFim) {
     return { inicio: filtros.dataInicio, fim: filtros.dataFim };
   }
 
+  const hoje = new Intl.DateTimeFormat('en-CA', {
+    timeZone: FUSO_LOJA,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(agora);
+
   const dias = DIAS_POR_PERIODO[(filtros.periodo as '7d' | '30d' | '90d') ?? '30d'] ?? 30;
-  return {
-    inicio: format(subDays(hoje, dias - 1), 'yyyy-MM-dd'),
-    fim: format(hoje, 'yyyy-MM-dd'),
-  };
+
+  // Meio-dia UTC evita que subtrair dias cruze fronteira de fuso.
+  const base = new Date(`${hoje}T12:00:00Z`);
+  base.setUTCDate(base.getUTCDate() - (dias - 1));
+
+  return { inicio: base.toISOString().slice(0, 10), fim: hoje };
 }
 
 /**
@@ -374,10 +395,12 @@ export async function calcularMetricas(filtros: FiltroMetricas = {}): Promise<Re
   return agregarMetricas(registros, vendas, inicio, fim);
 }
 
-export async function calcularMetricasPorLoja(filtros: FiltroMetricas = {}) {
-  const registros = await buscarAgendamentos(filtros);
-  const vendas = await buscarVendasDosAgendamentos(registros.map((r) => r.id));
-
+/**
+ * Agrega por loja a partir de dados JA LIDOS. Pura, pelo mesmo motivo de
+ * `agregarMetricas`: e o numero que o franqueado leva para a reuniao, e o
+ * que nao e testavel acaba nao sendo verificado.
+ */
+export function agregarPorLoja(registros: AgendamentoComRelacoes[], vendas: Map<string, number>) {
   const mapa = new Map<
     string,
     {
@@ -424,6 +447,14 @@ export async function calcularMetricasPorLoja(filtros: FiltroMetricas = {}) {
     }))
     .sort((a, b) => b.contatos - a.contatos);
 }
+
+export async function calcularMetricasPorLoja(filtros: FiltroMetricas = {}) {
+  const registros = await buscarAgendamentos(filtros);
+  const vendas = await buscarVendasDosAgendamentos(registros.map((r) => r.id));
+  return agregarPorLoja(registros, vendas);
+}
+
+
 
 /**
  * Realizado de cada agendador na competencia, para confrontar com a meta.

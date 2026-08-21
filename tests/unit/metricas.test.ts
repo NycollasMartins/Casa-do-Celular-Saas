@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agregarMetricas } from '@/lib/supabase/queries';
+import { agregarMetricas, agregarPorLoja, resolverIntervalo } from '@/lib/supabase/queries';
 import type { AgendamentoComRelacoes, AgendamentoStatus } from '@/lib/types/database';
 
 /**
@@ -219,5 +219,130 @@ describe('agregarMetricas', () => {
       expect(m.dadosDiarios).toHaveLength(7);
       expect(m.dadosDiarios.reduce((soma, dia) => soma + dia.contatos, 0)).toBe(1);
     });
+  });
+});
+
+describe('agregarPorLoja', () => {
+  const lojaA = { id: 'loja-1', nome: 'Loja 1', codigo_loja: 'L-001' };
+  const lojaB = { id: 'loja-2', nome: 'Loja 2', codigo_loja: 'L-002' };
+
+  function daLoja(status: AgendamentoStatus, loja: typeof lojaA) {
+    return registro(status, { loja_id: loja.id, loja });
+  }
+
+  it('separa os numeros por loja', () => {
+    const linhas = agregarPorLoja(
+      [daLoja('contatado', lojaA), daLoja('compareceu', lojaA), daLoja('agendado', lojaB)],
+      new Map()
+    );
+
+    expect(linhas).toHaveLength(2);
+    expect(linhas.find((l) => l.lojaId === 'loja-1')).toMatchObject({ contatos: 2, compareceram: 1 });
+    expect(linhas.find((l) => l.lojaId === 'loja-2')).toMatchObject({ contatos: 1, agendados: 1 });
+  });
+
+  it('ordena pelo volume de contatos, como a tela promete', () => {
+    const linhas = agregarPorLoja(
+      [daLoja('contatado', lojaA), daLoja('contatado', lojaB), daLoja('contatado', lojaB)],
+      new Map()
+    );
+
+    expect(linhas[0].lojaId).toBe('loja-2');
+  });
+
+  it('soma receita e ticket medio por loja', () => {
+    const um = daLoja('compareceu', lojaA);
+    const dois = daLoja('compareceu', lojaA);
+    const tres = daLoja('compareceu', lojaB);
+
+    const linhas = agregarPorLoja(
+      [um, dois, tres],
+      new Map([
+        [um.id, 300],
+        [dois.id, 100],
+        [tres.id, 50],
+      ])
+    );
+
+    const a = linhas.find((l) => l.lojaId === 'loja-1')!;
+    expect(a.vendas).toBe(2);
+    expect(a.receita).toBe(400);
+    expect(a.ticketMedio).toBe(200);
+
+    expect(linhas.find((l) => l.lojaId === 'loja-2')!.ticketMedio).toBe(50);
+  });
+
+  /** Mesma regra da metrica geral: faltar nao desfaz o agendamento. */
+  it('conta quem faltou como visita marcada', () => {
+    const linhas = agregarPorLoja(
+      [daLoja('nao_compareceu', lojaA), daLoja('compareceu', lojaA)],
+      new Map()
+    );
+
+    expect(linhas[0].agendados).toBe(2);
+    expect(linhas[0].taxaConversao).toBe(100);
+  });
+
+  it('loja sem venda fica com receita e ticket zerados, nao nulos', () => {
+    const linhas = agregarPorLoja([daLoja('contatado', lojaA)], new Map());
+
+    expect(linhas[0].receita).toBe(0);
+    expect(linhas[0].ticketMedio).toBe(0);
+  });
+
+  it('devolve lista vazia sem registro nenhum', () => {
+    expect(agregarPorLoja([], new Map())).toEqual([]);
+  });
+});
+
+describe('resolverIntervalo', () => {
+  /** 22h de 20/08 em Brasilia = 01h de 21/08 em UTC. */
+  const noite = new Date('2026-08-21T01:00:00Z');
+
+  it('respeita o intervalo personalizado', () => {
+    expect(
+      resolverIntervalo({ periodo: 'personalizado', dataInicio: '2026-01-01', dataFim: '2026-01-31' })
+    ).toEqual({ inicio: '2026-01-01', fim: '2026-01-31' });
+  });
+
+  it('usa 30 dias por padrao', () => {
+    const { inicio, fim } = resolverIntervalo({}, new Date('2026-08-20T15:00:00Z'));
+    expect(fim).toBe('2026-08-20');
+    expect(inicio).toBe('2026-07-22');
+  });
+
+  it('7 e 90 dias contam a partir de hoje, inclusive', () => {
+    const meio = new Date('2026-08-20T15:00:00Z');
+    expect(resolverIntervalo({ periodo: '7d' }, meio).inicio).toBe('2026-08-14');
+    expect(resolverIntervalo({ periodo: '90d' }, meio).inicio).toBe('2026-05-23');
+  });
+
+  /**
+   * DEFEITO CORRIGIDO: o servidor roda em UTC e as lojas em Brasilia. As
+   * 22h o UTC ja virou o dia, e a janela escorregava — descartava um dia
+   * real de dados e incluia um que ainda nao aconteceu. O mesmo usuario via
+   * totais diferentes as 20h e as 22h.
+   */
+  it('a janela nao escorrega quando o UTC ja virou o dia', () => {
+    expect(resolverIntervalo({ periodo: '30d' }, noite)).toEqual({
+      inicio: '2026-07-22',
+      fim: '2026-08-20',
+    });
+  });
+
+  it('o mesmo dia da a mesma janela de tarde e de noite', () => {
+    const tarde = resolverIntervalo({ periodo: '30d' }, new Date('2026-08-20T18:00:00Z'));
+    expect(resolverIntervalo({ periodo: '30d' }, noite)).toEqual(tarde);
+  });
+
+  it('atravessa a virada de mes', () => {
+    expect(resolverIntervalo({ periodo: '7d' }, new Date('2026-09-03T15:00:00Z')).inicio).toBe(
+      '2026-08-28'
+    );
+  });
+
+  it('periodo personalizado sem as duas datas cai no padrao', () => {
+    const { fim } = resolverIntervalo({ periodo: 'personalizado' }, new Date('2026-08-20T15:00:00Z'));
+    expect(fim).toBe('2026-08-20');
   });
 });
