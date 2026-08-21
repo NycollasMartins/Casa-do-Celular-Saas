@@ -121,8 +121,15 @@ export async function buscarAgendamentos(
     if (filtros.agendadorId) query = query.eq('agendador_id', filtros.agendadorId);
     if (filtros.status?.length) query = query.in('status', filtros.status);
     if (filtros.busca) {
+      // O termo vai para dentro de uma expressao do PostgREST, onde virgula
+      // separa condicoes e ponto separa coluna de operador. Interpolar cru
+      // deixava o texto do usuario acrescentar condicoes a consulta —
+      // buscar por "a,cliente_cpf.eq.529.982.247-25" viraria um filtro que
+      // ninguem escreveu. Aspas delimitam o valor; a barra invertida e as
+      // proprias aspas precisam ser escapadas antes.
+      const termo = filtros.busca.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
       query = query.or(
-        `cliente_nome.ilike.%${filtros.busca}%,cliente_telefone.ilike.%${filtros.busca}%`
+        `cliente_nome.ilike."%${termo}%",cliente_telefone.ilike."%${termo}%"`
       );
     }
     return query;

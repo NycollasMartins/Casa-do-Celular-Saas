@@ -697,6 +697,13 @@ falhar: abre no destino e, se o encerramento da origem falhar, desfaz a
 abertura. O pior estado possível é "continua na origem", nunca "perdeu as
 duas".
 
+**Filtro de data validado antes de virar consulta.** Os parâmetros `inicio`
+e `fim` vêm da query string, então chegam como o usuário — ou um link
+quebrado — quiser. `?inicio=abc` ia direto para o `gte` e derrubava a
+página; `?inicio=2026-02-31` passava no formato e falhava no banco. Sem par
+coerente, o filtro cai no período padrão em vez de mostrar erro ou lista
+vazia sem explicação.
+
 **CPF validado com o algoritmo oficial**, no servidor. A máscara só formata;
 `111.111.111-11` passa no regex e é rejeitado no dígito verificador.
 
