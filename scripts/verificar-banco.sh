@@ -11,8 +11,9 @@
 #
 # Este script cria um banco descartavel, reproduz o que o Supabase fornece
 # (schema auth, auth.uid(), os papeis), aplica TODAS as migrations na ordem,
-# popula o seed, roda asserçoes de RLS impersonando cada papel e exercita as
-# funcoes SQL (anonimizacao, lembrete, resumo semanal) contra dados reais.
+# popula o seed, roda asserçoes de RLS impersonando cada papel, exercita as
+# funcoes SQL (anonimizacao, lembrete, resumo semanal) contra dados reais e
+# confere os tipos de TypeScript contra o schema que acabou de ser criado.
 #
 # Nao substitui os testes contra o Supabase (npm run test:rls), que exercitam
 # tambem o PostgREST e o GoTrue. Cobre a camada onde mora a seguranca.
@@ -97,6 +98,17 @@ done
 if [ "$problemas" -ne 0 ]; then
   echo
   echo "Ha asserçao falhando."
+  exit 1
+fi
+
+# Os tipos de lib/types/database.ts sao escritos a mao e precisam espelhar as
+# migrations. Nada garante isso sozinho: o TypeScript confia no que esta
+# declarado, entao coluna nova sem tipo compila e passa despercebida.
+echo
+echo "Tipos contra o schema"
+if ! node "$VERIFICACAO/tipos.mjs"; then
+  echo
+  echo "Atualize lib/types/database.ts para refletir as migrations."
   exit 1
 fi
 

@@ -80,6 +80,12 @@ jobs:
       - name: Instalar o cliente do Postgres
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
+      # O script de conferencia de tipos roda em node puro, sem dependencia
+      # do projeto — mas precisa do runtime.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       # Chama o script direto, sem Node: ele e bash e psql puros, entao o job
       # nao precisa instalar dependencia nenhuma do projeto.
       - name: Verificar migrations, RLS e funcoes

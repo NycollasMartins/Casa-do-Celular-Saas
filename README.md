@@ -356,6 +356,17 @@ usuários do seed não existem, em vez de falharem em vermelho. É uma trava pro
 alguém aponte o `.env.local` para produção e saia escrevendo. Para rodá-las,
 execute antes `npm run seed:auth` e a migration de seed.
 
+### Tipos contra o schema
+
+`lib/types/database.ts` é escrito à mão e precisa espelhar as migrations.
+Nada garante isso sozinho: o TypeScript confia no que está declarado, então
+uma coluna nova sem tipo compila e passa despercebida — foi o que aconteceu
+com `notificacoes` e `envios_relatorio`, criadas nas migrations e sem tipo
+por vários commits.
+
+`npm run verificar:banco` compara os dois nos dois sentidos: coluna no banco
+sem campo no tipo, e campo no tipo sem coluna no banco. Divergir falha o CI.
+
 ### Contrato entre os scripts e `lib/`
 
 Os scripts de rotina rodam com `node` puro, sem build, e por isso não

@@ -88,7 +88,7 @@ export type Agendamento = {
   anonimizado_em: string | null;
   created_at: string;
   updated_at: string;
-}
+};
 
 export type Venda = {
   id: string;
