@@ -171,7 +171,24 @@ export async function buscarAgendamentos(
 
   const linhas: unknown[] = [];
 
-  for (let inicioPagina = 0; ; inicioPagina += TAMANHO_PAGINA) {
+  // O PostgREST tem teto proprio de linhas por resposta — no Supabase e o
+  // "Max rows" em Settings > API, com padrao 1000. Hoje ele COINCIDE com
+  // TAMANHO_PAGINA, e a paginacao so funciona por causa dessa coincidencia.
+  //
+  // Duas armadilhas moram aqui, e as duas produzem numero errado calado:
+  //
+  //  - Parar quando a pagina vem menor que a pedida: com o teto em 500, TODA
+  //    pagina vem menor, e o laco encerrava na primeira. As metricas passariam
+  //    a somar 500 registros de milhares. E o mesmo defeito descrito acima,
+  //    entrando por outra porta.
+  //
+  //  - Avancar de TAMANHO_PAGINA em TAMANHO_PAGINA enquanto o servidor entrega
+  //    menos: as linhas entre o que veio e o proximo salto somem do meio.
+  //
+  // Por isso o avanco segue o tamanho REAL da resposta e a saida so acontece
+  // com pagina vazia. Custa uma requisicao a mais no fim; paga com imunidade
+  // a qualquer teto que o servidor imponha.
+  for (let inicioPagina = 0; ; ) {
     const { data, error } = await montarConsulta().range(
       inicioPagina,
       inicioPagina + TAMANHO_PAGINA - 1
@@ -181,8 +198,9 @@ export async function buscarAgendamentos(
 
     const pagina = data ?? [];
     linhas.push(...pagina);
+    inicioPagina += pagina.length;
 
-    if (pagina.length < TAMANHO_PAGINA) break;
+    if (pagina.length === 0) break;
 
     if (linhas.length >= TETO_LEITURA) {
       throw new Error(

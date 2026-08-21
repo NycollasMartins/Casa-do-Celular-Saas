@@ -43,6 +43,9 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
         disabled={disabled || loading}
+        // Desabilitar esconde o botao da navegacao, mas nao diz por que. Sem
+        // aria-busy, quem usa leitor de tela so percebe que o botao sumiu.
+        aria-busy={loading || undefined}
         {...props}
       >
         {loading ? (

@@ -20,7 +20,8 @@
     "relatorio:semanal": "node scripts/relatorio-semanal.mjs",
     "verificar:banco": "bash scripts/verificar-banco.sh",
     "consolidado:gerar": "node scripts/gerar-consolidado.mjs",
-    "consolidado:conferir": "node scripts/gerar-consolidado.mjs --conferir"
+    "consolidado:conferir": "node scripts/gerar-consolidado.mjs --conferir",
+    "medir:consultas": "bash scripts/medir-consultas.sh"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
