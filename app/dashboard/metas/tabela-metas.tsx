@@ -83,7 +83,7 @@ export function TabelaMetas({ competencia, linhas, metas }: Props) {
           {linhas.length === 0 ? (
             <TableRow>
               <TableCell colSpan={7} className="py-10 text-center text-sm text-slate-500">
-                Nenhum agendador com atividade nesta competencia.
+                Nenhum agendador com lotacao ativa. Cadastre a equipe em Equipe.
               </TableCell>
             </TableRow>
           ) : (

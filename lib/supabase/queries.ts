@@ -417,3 +417,40 @@ export async function minhaMetaDoMes(usuarioId: string) {
     },
   };
 }
+
+/**
+ * Agendadores com lotacao ATIVA no escopo do usuario.
+ *
+ * Diferente de `buscarAgendadoresDoUsuario`, que serve ao filtro da tabela e
+ * lista quem aparece nos agendamentos: aqui interessa quem pode RECEBER
+ * meta. A policy `metas_write` exige lotacao ativa, entao listar alguem sem
+ * ela levaria a um erro de RLS que o gestor nao teria como interpretar.
+ */
+export async function buscarAgendadoresAtivos(): Promise<Pick<Usuario, 'id' | 'nome'>[]> {
+  const supabase = createClient();
+
+  // Duas consultas em vez de join embutido: o tipo Database declara
+  // `Relationships: []`, entao o join do PostgREST nao chega tipado e
+  // exigiria `as unknown as` — que esconderia erro de shape em vez de pegar.
+  const { data: vinculos, error: erroVinculos } = await supabase
+    .from('agendadores_lojas')
+    .select('usuario_id')
+    .is('data_fim', null);
+
+  if (erroVinculos) {
+    throw new Error(`Nao foi possivel carregar as lotacoes: ${erroVinculos.message}`);
+  }
+
+  const ids = Array.from(new Set((vinculos ?? []).map((linha) => linha.usuario_id)));
+  if (ids.length === 0) return [];
+
+  const { data: usuarios, error } = await supabase
+    .from('usuarios')
+    .select('id, nome')
+    .in('id', ids)
+    .eq('status', 'ativo')
+    .order('nome');
+
+  if (error) throw new Error(`Nao foi possivel carregar os agendadores: ${error.message}`);
+  return usuarios ?? [];
+}

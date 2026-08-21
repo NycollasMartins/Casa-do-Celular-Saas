@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { exigirRole } from '@/lib/auth/session';
 import { createClient } from '@/lib/supabase/server';
-import { desempenhoNaCompetencia } from '@/lib/supabase/queries';
+import { buscarAgendadoresAtivos, desempenhoNaCompetencia } from '@/lib/supabase/queries';
 import { competenciaDe, fimDaCompetencia } from '@/lib/metas';
 import { formatarDataIso } from '@/lib/utils';
 import type { ParametrosBusca } from '@/lib/filtros';
@@ -25,10 +25,32 @@ export default async function MetasPage({ searchParams }: { searchParams: Parame
   const competencia = lerCompetencia(searchParams);
   const supabase = createClient();
 
-  const [linhas, { data: metasBrutas }] = await Promise.all([
+  const [desempenho, agendadores, { data: metasBrutas }] = await Promise.all([
     desempenhoNaCompetencia(competencia),
+    buscarAgendadoresAtivos(),
     supabase.from('metas').select('*').eq('competencia', competencia),
   ]);
+
+  // A lista parte de quem PODE receber meta, nao de quem teve movimento.
+  //
+  // Montar a partir do desempenho deixava a tela vazia no dia 1o do mes —
+  // ninguem tem movimento ainda — que e exatamente quando se define meta. E
+  // incluia quem nao pode receber: a policy metas_write exige lotacao ativa
+  // de agendador, entao um diretor que tivesse criado agendamento aparecia
+  // na lista e dava erro de RLS ao ser clicado.
+  const realizadoPorId = new Map(desempenho.map((linha) => [linha.agendadorId, linha]));
+
+  const linhas = agendadores.map((agendador) => {
+    const realizado = realizadoPorId.get(agendador.id);
+    return {
+      agendadorId: agendador.id,
+      nome: agendador.nome,
+      agendamentos: realizado?.agendamentos ?? 0,
+      taxaConversao: realizado?.taxaConversao ?? 0,
+      vendas: realizado?.vendas ?? 0,
+      receita: realizado?.receita ?? 0,
+    };
+  });
 
   const metas: Record<string, MetaAgendador> = {};
   for (const meta of (metasBrutas ?? []) as MetaAgendador[]) {
