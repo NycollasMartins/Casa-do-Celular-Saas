@@ -379,6 +379,116 @@ begin
   delete from public.lojas where nome = '__assercao_rls__';
 end $$;
 
+-- ============ desligamento: o acesso morre com o status ============
+--
+-- O produto promete que desligar alguem tira o acesso. Quem cumpre a promessa
+-- sao as quatro helpers reescritas pela migration 004, que somaram
+-- `and u.status = 'ativo'` ao corpo herdado da 002.
+--
+-- POR QUE ISTO PRECISA DE ASSERCAO
+-- As mesmas quatro funcoes existem nos DOIS arquivos. Reaplicar a 002 sozinha
+-- — ou colar o trecho antigo — devolve a versao sem o filtro, e o desligamento
+-- vira enfeite: a pessoa continua enxergando o tenant inteiro. Nada no schema
+-- denuncia, porque a funcao continua existindo com o mesmo nome e a mesma
+-- assinatura. So o comportamento denuncia.
+--
+-- A revogacao de sessao da aplicacao (admin.signOut global) nao cobre este
+-- caso: o access token ja emitido vale ate expirar. Quem fecha essa janela e
+-- o RLS, e e ele que esta sendo medido aqui.
+do $$
+declare
+  v_id uuid;
+  v_dono uuid;
+  v_loja uuid;
+  v_franq uuid;
+  v_lojas_antes text;
+  v_erro text;
+begin
+  select id into v_id   from auth.users where email = 'agendador1.loja1@franqueado.com.br';
+  select id into v_dono from auth.users where email = 'dono@franqueado.com.br';
+
+  perform set_config('request.jwt.claim.sub', v_id::text, false);
+  set role authenticated;
+  v_lojas_antes := (select count(*)::text from public.lojas);
+  -- Guarda a loja AGORA, enquanto ele ainda a enxerga. Usar
+  -- `(select id from lojas limit 1)` depois de desligado traria null, e o
+  -- insert seria barrado por NOT NULL em vez de por RLS: a assercao passaria
+  -- sem provar nada sobre permissao.
+  select id into v_loja from public.lojas limit 1;
+  select franqueado_id into v_franq from public.usuarios where id = v_id;
+  reset role;
+
+  perform pg_temp.checar('linha de base: ativo ve 1 loja', '1', v_lojas_antes);
+
+  -- O desligamento parte do franqueado, como na aplicacao. Fazer direto como
+  -- dono do banco pularia a policy e o trigger de campos sensiveis — que e
+  -- justamente quem impede o proprio agendador de se reativar depois.
+  perform set_config('request.jwt.claim.sub', v_dono::text, false);
+  set role authenticated;
+  update public.usuarios set status = 'inativo' where id = v_id;
+  reset role;
+
+  perform pg_temp.checar('franqueado consegue desligar', 'inativo',
+    (select status from public.usuarios where id = v_id));
+
+  perform set_config('request.jwt.claim.sub', v_id::text, false);
+  set role authenticated;
+
+  perform pg_temp.checar('inativo nao ve loja nenhuma', '0',
+    (select count(*)::text from public.lojas));
+  perform pg_temp.checar('inativo nao ve o franqueado', '0',
+    (select count(*)::text from public.franqueados));
+  perform pg_temp.checar('inativo nao ve agendamento', '0',
+    (select count(*)::text from public.agendamentos));
+  perform pg_temp.checar('inativo nao ve colega', '0',
+    (select count(*)::text from public.usuarios where id <> v_id));
+  -- Direto na helper. `pode_gerenciar()` nao serve aqui: ja e falso para
+  -- agendador ativo, entao passaria mesmo com o filtro de status removido —
+  -- assercao que nao carrega peso da falsa seguranca.
+  perform pg_temp.checar('usuario_role() nao reconhece o inativo', 'nulo',
+    (select coalesce(public.usuario_role()::text, 'nulo')));
+
+  -- Proposital e documentado na migration 004: a propria linha continua
+  -- legivel, para a aplicacao dizer "seu acesso foi encerrado" em vez de
+  -- quebrar numa tela vazia.
+  perform pg_temp.checar('inativo AINDA le a propria linha', '1',
+    (select count(*)::text from public.usuarios where id = v_id));
+
+  begin
+    insert into public.agendamentos (franqueado_id, loja_id, agendador_id, cliente_nome,
+                                     cliente_cpf, cliente_telefone, data_agendamento, status)
+    values (v_franq, v_loja, v_id, '__inativo__', '00000000000', '11999999999',
+            current_date, 'agendado');
+    v_erro := 'nao barrou';
+  exception when others then v_erro := 'barrou';
+  end;
+  perform pg_temp.checar('inativo NAO cria agendamento', 'barrou', v_erro);
+
+  -- Nem se reativa sozinho: sem isto, o desligamento duraria um clique.
+  begin
+    update public.usuarios set status = 'ativo' where id = v_id;
+    v_erro := 'nao barrou';
+  exception when others then v_erro := 'barrou';
+  end;
+  perform pg_temp.checar('inativo NAO se reativa sozinho', 'barrou', v_erro);
+
+  reset role;
+  delete from public.agendamentos where cliente_nome = '__inativo__';
+
+  -- Devolve o seed ao estado original: as asserçoes precisam rodar de novo, e
+  -- tudo depois desta linha conta com o usuario ativo.
+  perform set_config('request.jwt.claim.sub', v_dono::text, false);
+  set role authenticated;
+  update public.usuarios set status = 'ativo' where id = v_id;
+  reset role;
+
+  perform set_config('request.jwt.claim.sub', v_id::text, false);
+  set role authenticated;
+  perform pg_temp.checar('reativado volta a ver a loja', v_lojas_antes,
+    (select count(*)::text from public.lojas));
+  reset role;
+end $$;
+
 -- Desfaz o que as asserçoes escreveram, para poderem rodar de novo.
 reset role;
 delete from public.vendas where valor in (1500.50, 200, 100);

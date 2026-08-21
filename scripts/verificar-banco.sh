@@ -81,18 +81,21 @@ fi
 # codigo diferente de zero quando alguma asserçao falha. `set -o pipefail`,
 # no topo, garante que o status do psql sobreviva ao pipe do sed.
 problemas=0
+total_assercoes=0
 
 for arquivo in "$VERIFICACAO"/9*.sql; do
   titulo="$(basename "$arquivo" .sql | sed 's/^[0-9]*-//')"
   echo
   echo "Asserçoes: $titulo"
 
-  if psql -d "$DB" -v ON_ERROR_STOP=1 -f "$arquivo" 2>&1 \
-       | sed -n '/situacao/,$p' | sed 's/^/  /'; then
-    :
-  else
-    problemas=1
-  fi
+  saida_assercoes="$(psql -d "$DB" -v ON_ERROR_STOP=1 -f "$arquivo" 2>&1)" || problemas=1
+  echo "$saida_assercoes" | sed -n '/situacao/,$p' | sed 's/^/  /'
+
+  # Quantas RODARAM, nao quantas estao escritas. Contar chamadas no arquivo
+  # erra por dois motivos: a linha que DEFINE pg_temp.checar tambem casa, e ha
+  # desvio de guarda com duas chamadas das quais so uma executa.
+  executadas="$(echo "$saida_assercoes" | grep -cE '^ *(PASSOU|>>> FALHOU) ')"
+  total_assercoes=$((total_assercoes + executadas))
 done
 
 if [ "$problemas" -ne 0 ]; then
@@ -100,6 +103,19 @@ if [ "$problemas" -ne 0 ]; then
   echo "Ha asserçao falhando."
   exit 1
 fi
+
+# O README afirma quantas asserçoes rodam. Esse numero so e conhecivel aqui,
+# depois de rodar — por isso a conferencia mora neste script e nao num teste
+# unitario, que so consegue ler o arquivo.
+echo
+echo "Numero afirmado no README"
+afirmado="$(grep -oE '\*\*[0-9]+ asserções\*\*' "$RAIZ/README.md" | head -1 | grep -oE '[0-9]+')"
+if [ "$afirmado" != "$total_assercoes" ]; then
+  echo "  README diz $afirmado asserçoes; rodaram $total_assercoes."
+  echo "  Corrija o README: documentacao que mente e pior que documentacao ausente."
+  exit 1
+fi
+echo "  OK  $total_assercoes asserçoes, igual ao README"
 
 # Os tipos de lib/types/database.ts sao escritos a mao e precisam espelhar as
 # migrations. Nada garante isso sozinho: o TypeScript confia no que esta
