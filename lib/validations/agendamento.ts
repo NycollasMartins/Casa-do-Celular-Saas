@@ -13,9 +13,23 @@ const REGEX_CPF = /^\d{3}\.\d{3}\.\d{3}-\d{2}$/;
 const REGEX_TELEFONE = /^\(\d{2}\)\s\d{4,5}-\d{4}$/;
 
 /** Data de hoje as 00:00 no fuso local, para comparar com o input date. */
-function hojeLocal(): Date {
-  const agora = new Date();
-  return new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+/**
+ * Hoje no fuso das LOJAS, em AAAA-MM-DD.
+ *
+ * A versao anterior usava o fuso do processo. No navegador do agendador isso
+ * era Brasilia e funcionava; no servidor da Vercel e da Netlify e UTC, que
+ * as 21h ja virou o dia. Depois desse horario, marcar visita para hoje era
+ * aceito pelo formulario e RECUSADO pela server action, com a mensagem "a
+ * data da visita deve ser hoje ou no futuro" — sobre a data de hoje. Bem no
+ * turno da noite, quando a loja esta cheia.
+ */
+export function hojeNaLoja(agora = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(agora);
 }
 
 export const agendamentoSchema = z.object({
@@ -61,10 +75,9 @@ export const agendamentoSchema = z.object({
  * comparecimento, entao a regra fica so no schema de criacao.
  */
 export const novoAgendamentoSchema = agendamentoSchema.refine(
-  (dados) => {
-    const [ano, mes, dia] = dados.data_agendamento.slice(0, 10).split('-').map(Number);
-    return new Date(ano, mes - 1, dia) >= hojeLocal();
-  },
+  // Comparacao de string: AAAA-MM-DD ordena igual a data, e nao passa por
+  // Date nenhum — que e onde o fuso se intromete.
+  (dados) => dados.data_agendamento.slice(0, 10) >= hojeNaLoja(),
   { path: ['data_agendamento'], message: 'A data da visita deve ser hoje ou no futuro' }
 );
 

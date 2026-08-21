@@ -700,6 +700,14 @@ falhar: abre no destino e, se o encerramento da origem falhar, desfaz a
 abertura. O pior estado possível é "continua na origem", nunca "perdeu as
 duas".
 
+**"Hoje" é sempre o hoje das lojas, nunca o do processo.** A validação que
+exige visita de hoje em diante comparava com o fuso de quem executava: no
+navegador do agendador era Brasília e funcionava, no servidor é UTC. Depois
+das 21h, marcar visita para hoje passava no formulário e era **recusada pela
+server action** — com a mensagem "a data da visita deve ser hoje ou no
+futuro", sobre a data de hoje. Bem no turno da noite, quando a loja está
+cheia.
+
 **A janela de datas é calculada no fuso das lojas.** `data_agendamento` é
 um `date` sem fuso, preenchido em Brasília, mas o servidor da Vercel e da
 Netlify roda em UTC. Às 22h o UTC já virou o dia, e a janela de 30 dias

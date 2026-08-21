@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mascararCpf, mascararTelefone, validarCpf } from '@/lib/utils';
-import { agendamentoSchema } from '@/lib/validations/agendamento';
+import { agendamentoSchema, hojeNaLoja, novoAgendamentoSchema } from '@/lib/validations/agendamento';
 import { novaSenhaSchema } from '@/lib/validations/auth';
 
 describe('validarCpf', () => {
@@ -102,6 +102,67 @@ describe('novaSenhaSchema', () => {
     expect(resultado.success).toBe(false);
     if (!resultado.success) {
       expect(resultado.error.flatten().fieldErrors.confirmacao).toBeTruthy();
+    }
+  });
+});
+
+describe('hojeNaLoja', () => {
+  /**
+   * DEFEITO CORRIGIDO: a validacao usava o fuso do processo. No navegador do
+   * agendador isso era Brasilia e funcionava; no servidor, UTC. Depois das
+   * 21h, marcar visita para HOJE era aceito pelo formulario e recusado pela
+   * server action, com a mensagem "a data da visita deve ser hoje ou no
+   * futuro" — sobre a data de hoje.
+   */
+  it('usa o fuso das lojas, nao o do processo', () => {
+    // 01h UTC = 22h do dia anterior em Brasilia.
+    expect(hojeNaLoja(new Date('2026-08-21T01:00:00Z'))).toBe('2026-08-20');
+  });
+
+  it('vira o dia no horario de Brasilia, nao no de Greenwich', () => {
+    // 02h59 UTC ainda e 23h59 do dia anterior em Brasilia.
+    expect(hojeNaLoja(new Date('2026-08-21T02:59:00Z'))).toBe('2026-08-20');
+    // 03h00 UTC ja e meia-noite em Brasilia.
+    expect(hojeNaLoja(new Date('2026-08-21T03:00:00Z'))).toBe('2026-08-21');
+  });
+
+  it('funciona em horario comercial', () => {
+    expect(hojeNaLoja(new Date('2026-08-20T15:00:00Z'))).toBe('2026-08-20');
+  });
+});
+
+describe('novoAgendamentoSchema', () => {
+  const base = {
+    loja_id: '11111111-1111-4111-8111-111111111111',
+    cliente_nome: 'Cliente Teste',
+    cliente_cpf: '529.982.247-25',
+    cliente_telefone: '(61) 99999-0001',
+    status: 'agendado',
+  };
+
+  function comData(data: string) {
+    return novoAgendamentoSchema.safeParse({ ...base, data_agendamento: data });
+  }
+
+  it('aceita visita marcada para hoje', () => {
+    expect(comData(hojeNaLoja()).success).toBe(true);
+  });
+
+  it('aceita visita no futuro', () => {
+    const amanha = new Date();
+    amanha.setDate(amanha.getDate() + 1);
+    expect(comData(amanha.toISOString().slice(0, 10)).success).toBe(true);
+  });
+
+  it('recusa visita no passado', () => {
+    expect(comData('2020-01-01').success).toBe(false);
+  });
+
+  it('aponta o erro no campo da data', () => {
+    const resultado = comData('2020-01-01');
+    expect(resultado.success).toBe(false);
+    if (!resultado.success) {
+      expect(resultado.error.flatten().fieldErrors.data_agendamento).toBeTruthy();
     }
   });
 });
