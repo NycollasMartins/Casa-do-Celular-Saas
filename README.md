@@ -700,6 +700,18 @@ falhar: abre no destino e, se o encerramento da origem falhar, desfaz a
 abertura. O pior estado possível é "continua na origem", nunca "perdeu as
 duas".
 
+**Quem faltou continua contando como visita marcada.** `nao_compareceu`
+entra em `totalAgendados`: a pessoa marcou, e não ter ido não desfaz o
+agendamento. A definição anterior o excluía, então quem faltou sumia do
+numerador **e** do denominador — com 10 comparecimentos e 90 faltas, a tela
+exibia 100% de comparecimento. A métrica ficava cega justamente ao número
+que o sistema existe para combater.
+
+A taxa de comparecimento usa como denominador as visitas com **desfecho
+conhecido**, não toda visita marcada. Incluir o que ainda vai acontecer
+faria o número cair sozinho toda vez que alguém agendasse para a semana
+seguinte.
+
 **Erro de formulário ligado ao campo.** `aria-describedby` e `aria-invalid`
 em todos os seis formulários, via `components/ui/campo.tsx`. Sem isso a
 mensagem é um texto vermelho solto abaixo do input: quem enxerga entende

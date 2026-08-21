@@ -180,7 +180,19 @@ export async function buscarAgendamentos(
 /* Agregacoes                                                          */
 /* ------------------------------------------------------------------ */
 
-const STATUS_AGENDADOS: AgendamentoStatus[] = ['agendado', 'compareceu'];
+/**
+ * Quem chegou a ter visita marcada — o segundo degrau do funil.
+ *
+ * `nao_compareceu` PRECISA estar aqui: a pessoa marcou, e o fato de nao ter
+ * ido nao desfaz o agendamento. Sem ela, quem faltou sumia do numerador e do
+ * denominador da taxa de comparecimento, que virava cega justamente ao
+ * numero que o sistema existe para combater — com 10 comparecimentos e 90
+ * faltas, a tela exibia 100%.
+ */
+const STATUS_AGENDADOS: AgendamentoStatus[] = ['agendado', 'compareceu', 'nao_compareceu'];
+
+/** Visitas cujo desfecho ja se sabe. Quem ainda vai acontecer nao entra. */
+const STATUS_CONCLUIDOS: AgendamentoStatus[] = ['compareceu', 'nao_compareceu'];
 
 function agruparPorDia(
   registros: Pick<Agendamento, 'data_agendamento' | 'status'>[],
@@ -296,20 +308,43 @@ async function buscarVendasDosAgendamentos(
  * seis roundtrips ao banco. Se o volume crescer, troque por uma view
  * materializada ou por RPC com agregacao no Postgres.
  */
-export async function calcularMetricas(filtros: FiltroMetricas = {}): Promise<ResumoMetricas> {
-  const { inicio, fim } = resolverIntervalo(filtros);
-  const registros = await buscarAgendamentos(filtros);
-
+/**
+ * Agrega os numeros a partir de dados JA LIDOS.
+ *
+ * Separada da leitura de proposito. Alem de permitir teste sem banco — esta
+ * e a conta que o produto inteiro existe para fazer —, e o que evita ler o
+ * mesmo periodo duas vezes: `desempenhoNaCompetencia` precisava das metricas
+ * E dos registros crus, e antes chamava as duas funcoes, cada uma com sua
+ * propria leitura completa.
+ */
+export function agregarMetricas(
+  registros: AgendamentoComRelacoes[],
+  vendas: Map<string, number>,
+  inicio: string,
+  fim: string
+): ResumoMetricas {
   const totalContatos = registros.length;
   const totalAgendados = registros.filter((r) => STATUS_AGENDADOS.includes(r.status)).length;
   const totalCompareceram = registros.filter((r) => r.status === 'compareceu').length;
 
   const taxaConversao = totalContatos > 0 ? (totalAgendados / totalContatos) * 100 : 0;
-  const taxaComparecimento = totalAgendados > 0 ? (totalCompareceram / totalAgendados) * 100 : 0;
 
-  const vendas = await buscarVendasDosAgendamentos(registros.map((r) => r.id));
-  const receita = Array.from(vendas.values()).reduce((soma, valor) => soma + valor, 0);
-  const totalVendas = vendas.size;
+  // Denominador e a visita com desfecho conhecido, nao toda visita marcada.
+  // Incluir o que ainda vai acontecer diluiria a taxa e faria o numero cair
+  // sozinho toda vez que alguem agendasse para a semana seguinte.
+  const totalConcluidos = registros.filter((r) => STATUS_CONCLUIDOS.includes(r.status)).length;
+  const taxaComparecimento = totalConcluidos > 0 ? (totalCompareceram / totalConcluidos) * 100 : 0;
+
+  // Soma so as vendas dos registros recebidos: o mapa pode trazer chave de
+  // agendamento fora do recorte se o chamador reaproveitar a leitura.
+  let receita = 0;
+  let totalVendas = 0;
+  for (const registro of registros) {
+    const valor = vendas.get(registro.id);
+    if (valor === undefined) continue;
+    receita += valor;
+    totalVendas++;
+  }
 
   // Denominador e quem compareceu, nao quem foi contatado: fechamento mede
   // o desempenho da loja no balcao, nao a captacao do agendador.
@@ -331,7 +366,14 @@ export async function calcularMetricas(filtros: FiltroMetricas = {}): Promise<Re
   };
 }
 
-/** Metricas consolidadas por loja (usado em Relatorios e no super admin). */
+export async function calcularMetricas(filtros: FiltroMetricas = {}): Promise<ResumoMetricas> {
+  const { inicio, fim } = resolverIntervalo(filtros);
+  const registros = await buscarAgendamentos(filtros);
+  const vendas = await buscarVendasDosAgendamentos(registros.map((r) => r.id));
+
+  return agregarMetricas(registros, vendas, inicio, fim);
+}
+
 export async function calcularMetricasPorLoja(filtros: FiltroMetricas = {}) {
   const registros = await buscarAgendamentos(filtros);
   const vendas = await buscarVendasDosAgendamentos(registros.map((r) => r.id));
@@ -390,22 +432,21 @@ export async function calcularMetricasPorLoja(filtros: FiltroMetricas = {}) {
  * e mensal, e comparar 7 dias com um alvo de 30 daria um numero enganoso.
  */
 export async function desempenhoNaCompetencia(competencia: string) {
-  const metricas = await calcularMetricas({
-    periodo: 'personalizado',
+  const intervalo = {
+    periodo: 'personalizado' as const,
     dataInicio: competencia,
     dataFim: fimDaCompetencia(competencia),
-  });
+  };
 
-  const registros = await buscarAgendamentos({
-    periodo: 'personalizado',
-    dataInicio: competencia,
-    dataFim: fimDaCompetencia(competencia),
-  });
-
+  // UMA leitura. A versao anterior chamava calcularMetricas e
+  // buscarAgendamentos, cada uma varrendo o mesmo periodo por completo — o
+  // dobro do custo, e o dobro de novo nas vendas.
+  const registros = await buscarAgendamentos(intervalo);
   const vendas = await buscarVendasDosAgendamentos(registros.map((r) => r.id));
+  const metricas = agregarMetricas(registros, vendas, competencia, fimDaCompetencia(competencia));
 
-  // As vendas precisam ser atribuidas ao agendador do atendimento, nao a
-  // quem lancou: quem trouxe o cliente e que fez o resultado.
+  // As vendas sao atribuidas ao agendador do ATENDIMENTO, nao a quem lancou:
+  // quem trouxe o cliente e que fez o resultado.
   const porAgendador = new Map<string, { vendas: number; receita: number }>();
   for (const registro of registros) {
     const valor = vendas.get(registro.id);
@@ -429,6 +470,7 @@ export async function desempenhoNaCompetencia(competencia: string) {
     };
   });
 }
+
 
 /**
  * Meta e realizado do proprio usuario na competencia corrente.
