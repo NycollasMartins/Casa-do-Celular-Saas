@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidar as revalidarTelas } from '@/lib/revalidacao';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { buscarUsuarioAtual, podeGerenciarCadastros } from '@/lib/auth/session';
@@ -72,8 +72,7 @@ export async function salvarLoja(formData: FormData, id?: string): Promise<Resul
     };
   }
 
-  revalidatePath('/dashboard/lojas');
-  revalidatePath('/dashboard');
+  revalidarTelas('loja');
   return { sucesso: true, mensagem: id ? 'Loja atualizada.' : 'Loja criada.' };
 }
 
@@ -189,7 +188,7 @@ export async function criarUsuario(formData: FormData): Promise<ResultadoAction>
     }
   }
 
-  revalidatePath('/dashboard/usuarios');
+  revalidarTelas('equipe');
   return { sucesso: true, mensagem: `Usuario criado. Senha provisoria: ${senhaProvisoria}` };
 }
 
@@ -326,9 +325,7 @@ export async function atualizarUsuario(id: string, formData: FormData): Promise<
     }
   }
 
-  revalidatePath('/dashboard/usuarios');
-  revalidatePath('/dashboard/participacoes');
-  revalidatePath('/dashboard');
+  revalidarTelas('equipe');
   return { sucesso: true, mensagem: 'Usuario atualizado.' };
 }
 
@@ -421,9 +418,7 @@ export async function definirStatusUsuario(
     }
   }
 
-  revalidatePath('/dashboard/usuarios');
-  revalidatePath('/dashboard/participacoes');
-  revalidatePath('/dashboard');
+  revalidarTelas('equipe');
   return { sucesso: true, mensagem: status === 'inativo' ? 'Acesso encerrado.' : 'Acesso reativado.' };
 }
 
@@ -456,7 +451,7 @@ export async function salvarFranqueado(formData: FormData, id?: string): Promise
 
   if (error) return { sucesso: false, mensagem: `Nao foi possivel salvar: ${error.message}` };
 
-  revalidatePath('/admin/franqueados');
+  revalidarTelas('franqueado');
   return { sucesso: true, mensagem: id ? 'Franqueado atualizado.' : 'Franqueado criado.' };
 }
 
@@ -506,8 +501,7 @@ export async function encerrarParticipacao(id: string, dataFim?: string): Promis
 
   if (error) return { sucesso: false, mensagem: `Nao foi possivel encerrar: ${error.message}` };
 
-  revalidatePath('/dashboard/participacoes');
-  revalidatePath('/dashboard');
+  revalidarTelas('equipe');
   return { sucesso: true, mensagem: 'Participacao encerrada.' };
 }
 
@@ -547,8 +541,7 @@ export async function criarParticipacao(formData: FormData): Promise<ResultadoAc
     };
   }
 
-  revalidatePath('/dashboard/participacoes');
-  revalidatePath('/dashboard');
+  revalidarTelas('equipe');
   return { sucesso: true, mensagem: 'Participacao aberta.' };
 }
 
@@ -634,8 +627,7 @@ export async function transferirParticipacao(
     return { sucesso: false, mensagem: `Nao foi possivel encerrar a origem: ${erroEncerramento.message}` };
   }
 
-  revalidatePath('/dashboard/participacoes');
-  revalidatePath('/dashboard');
+  revalidarTelas('equipe');
   return { sucesso: true, mensagem: 'Participacao transferida.' };
 }
 
@@ -675,7 +667,7 @@ export async function salvarMeta(formData: FormData): Promise<ResultadoAction> {
 
   if (error) return { sucesso: false, mensagem: `Nao foi possivel salvar: ${error.message}` };
 
-  revalidatePath('/dashboard/metas');
+  revalidarTelas('meta');
   return { sucesso: true, mensagem: 'Meta salva.' };
 }
 
@@ -689,6 +681,6 @@ export async function removerMeta(id: string): Promise<ResultadoAction> {
   const { error } = await supabase.from('metas').delete().eq('id', id);
   if (error) return { sucesso: false, mensagem: `Nao foi possivel remover: ${error.message}` };
 
-  revalidatePath('/dashboard/metas');
+  revalidarTelas('meta');
   return { sucesso: true, mensagem: 'Meta removida.' };
 }

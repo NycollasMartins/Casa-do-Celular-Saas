@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidar as revalidarTelas } from '@/lib/revalidacao';
 import { createClient } from '@/lib/supabase/server';
 import { buscarUsuarioAtual, podeGerenciarCadastros } from '@/lib/auth/session';
 import { agendamentoSchema, novoAgendamentoSchema, vendaSchema } from '@/lib/validations/agendamento';
@@ -29,10 +29,12 @@ function extrair(formData: FormData) {
   };
 }
 
+/**
+ * Metas entrou na lista: a tela mostra agendamentos, vendas e faturamento
+ * por agendador, e ficava com numero velho depois de qualquer lancamento.
+ */
 function revalidar() {
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/agendamentos');
-  revalidatePath('/dashboard/relatorios');
+  revalidarTelas('agendamento');
 }
 
 /**
@@ -215,9 +217,7 @@ export async function anonimizarPorCpf(cpf: string): Promise<ResultadoAction & {
 
   if (error) return { sucesso: false, mensagem: `Nao foi possivel anonimizar: ${error.message}` };
 
-  revalidatePath('/dashboard/agendamentos');
-  revalidatePath('/dashboard/privacidade');
-  revalidatePath('/dashboard');
+  revalidarTelas('privacidade');
 
   return {
     sucesso: true,
@@ -304,9 +304,7 @@ export async function registrarVenda(
     return { sucesso: false, mensagem: `Nao foi possivel registrar: ${error.message}` };
   }
 
-  revalidatePath('/dashboard/agendamentos');
-  revalidatePath('/dashboard/relatorios');
-  revalidatePath('/dashboard');
+  revalidarTelas('venda');
   return { sucesso: true, mensagem: 'Venda registrada.' };
 }
 
@@ -336,9 +334,7 @@ export async function atualizarVenda(id: string, formData: FormData): Promise<Re
 
   if (error) return { sucesso: false, mensagem: `Nao foi possivel salvar: ${error.message}` };
 
-  revalidatePath('/dashboard/agendamentos');
-  revalidatePath('/dashboard/relatorios');
-  revalidatePath('/dashboard');
+  revalidarTelas('venda');
   return { sucesso: true, mensagem: 'Venda atualizada.' };
 }
 
@@ -354,8 +350,6 @@ export async function removerVenda(id: string): Promise<ResultadoAction> {
   const { error } = await supabase.from('vendas').delete().eq('id', id);
   if (error) return { sucesso: false, mensagem: `Nao foi possivel remover: ${error.message}` };
 
-  revalidatePath('/dashboard/agendamentos');
-  revalidatePath('/dashboard/relatorios');
-  revalidatePath('/dashboard');
+  revalidarTelas('venda');
   return { sucesso: true, mensagem: 'Venda removida.' };
 }
