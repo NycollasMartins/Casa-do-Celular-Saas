@@ -158,6 +158,55 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- Venda trava a mudanca de status (migration 011)
+--
+-- O trigger da 008 exige comparecimento para REGISTRAR a venda, mas nada
+-- impedia mudar o status depois — e o faturamento passava a contar um
+-- cliente que nao apareceu.
+-- ---------------------------------------------------------------------
+do $$
+declare v_id uuid; v_venda uuid; v_erro text; v_gestor uuid;
+begin
+  select id into v_gestor from public.usuarios where role = 'franqueado' limit 1;
+  select a.id into v_id
+  from public.agendamentos a
+  left join public.vendas v on v.agendamento_id = a.id
+  where a.status = 'compareceu' and v.id is null
+  limit 1;
+
+  insert into public.vendas (agendamento_id, valor, data_venda, registrada_por)
+  values (v_id, 999.99, current_date, v_gestor)
+  returning id into v_venda;
+
+  begin
+    update public.agendamentos set status = 'nao_compareceu' where id = v_id;
+    v_erro := 'nao barrou';
+  exception when others then v_erro := 'barrou';
+  end;
+  perform pg_temp.checar('mudar status com venda registrada e barrado', 'barrou', v_erro);
+  perform pg_temp.checar('o status permanece intacto apos a tentativa', 'compareceu',
+    (select status from public.agendamentos where id = v_id));
+
+  -- Outros campos seguem editaveis: a trava e so na saida de 'compareceu'.
+  begin
+    update public.agendamentos set observacoes = 'anotacao' where id = v_id;
+    v_erro := 'permitiu';
+  exception when others then v_erro := 'barrou';
+  end;
+  perform pg_temp.checar('editar outro campo com venda continua liberado', 'permitiu', v_erro);
+  update public.agendamentos set observacoes = null where id = v_id;
+
+  delete from public.vendas where id = v_venda;
+  begin
+    update public.agendamentos set status = 'nao_compareceu' where id = v_id;
+    v_erro := 'permitiu';
+  exception when others then v_erro := 'barrou';
+  end;
+  perform pg_temp.checar('removida a venda, o status volta a mudar', 'permitiu', v_erro);
+  update public.agendamentos set status = 'compareceu' where id = v_id;
+end $$;
+
+-- ---------------------------------------------------------------------
 -- RLS de metas (migration 009): o agendador le a propria
 -- ---------------------------------------------------------------------
 do $$
