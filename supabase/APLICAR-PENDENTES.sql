@@ -1,6 +1,9 @@
 -- =====================================================================
 -- APLICAR PENDENTES  ·  Casa do Celular
 --
+-- ARQUIVO GERADO. Nao edite a mao: rode `npm run consolidado:gerar`.
+-- O conteudo sai de supabase/migrations, e o CI confere se esta em dia.
+--
 -- Cole este arquivo INTEIRO no SQL Editor do Supabase e execute uma vez.
 --
 -- SEGURO DE RODAR MAIS DE UMA VEZ. Todo comando aqui e idempotente:
@@ -11,9 +14,9 @@
 -- perdido e nenhuma permissao e afrouxada.
 --
 -- ORDEM IMPORTA. As migrations dependem umas das outras: a funcao do
--- lembrete (007) referencia a coluna criada pela anonimizacao (006), e a
--- de relatorio (010) referencia a tabela de vendas (008). Rodar fora de
--- ordem faz a criacao da funcao falhar.
+-- lembrete referencia a coluna criada pela anonimizacao, e a de relatorio
+-- referencia a tabela de vendas. Rodar fora de ordem faz a criacao da
+-- funcao falhar.
 --
 -- AO FINAL ha um `notify pgrst` que recarrega o cache de schema do
 -- PostgREST. Sem ele, funcoes recem-criadas ficam invisiveis para a API e
@@ -21,19 +24,104 @@
 -- cache" mesmo com a funcao existindo no banco.
 --
 -- Conteudo, na ordem de execucao:
---   005  Fecha a escalada de privilegio     (20250101000004_protege_campos_sensiveis.sql)
---   006  Anonimizacao (LGPD)                (20250101000005_anonimizacao_lgpd.sql)
---   007  Lembrete de vespera                (20250101000006_notificacoes.sql)
---   008  Registro de venda                  (20250101000007_vendas.sql)
---   009  Metas por agendador                (20250101000008_metas.sql)
---   010  Relatorio semanal                  (20250101000009_relatorio_semanal.sql)
---   011  Venda trava mudanca de status      (20250101000010_venda_trava_status.sql)
---   012  Vinculo so dentro do tenant        (20250101000011_vinculo_mesmo_tenant.sql)
+--   004  STATUS DO USUARIO (desligamento)   (20250101000003_usuario_status.sql)
+--   005  PROTECAO DOS CAMPOS SENSIVEIS DE public.usuarios (20250101000004_protege_campos_sensiveis.sql)
+--   006  ANONIMIZACAO (LGPD)                (20250101000005_anonimizacao_lgpd.sql)
+--   007  NOTIFICACOES (lembrete de vespera) (20250101000006_notificacoes.sql)
+--   008  VENDAS (fecha o funil)             (20250101000007_vendas.sql)
+--   009  METAS POR AGENDADOR                (20250101000008_metas.sql)
+--   010  RELATORIO SEMANAL POR E-MAIL       (20250101000009_relatorio_semanal.sql)
+--   011  VENDA TRAVA A MUDANCA DE STATUS    (20250101000010_venda_trava_status.sql)
+--   012  VINCULO SO DENTRO DO PROPRIO TENANT (20250101000011_vinculo_mesmo_tenant.sql)
 -- =====================================================================
 
 
 -- ---------------------------------------------------------------------
--- >>> 005 · Fecha a escalada de privilegio
+-- >>> 004 · STATUS DO USUARIO (desligamento)
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+-- 004 - STATUS DO USUARIO (desligamento)
+-- Execute depois de 003_seed.sql.
+--
+-- PROBLEMA QUE RESOLVE
+-- Nao havia como revogar o acesso de alguem pela aplicacao. Apagar a linha
+-- nao serve: `agendamentos.agendador_id` referencia o usuario, e o historico
+-- de quem agendou o que e justamente o dado que o sistema existe para medir.
+--
+-- A saida e desligar sem apagar. O corte acontece nas funcoes de permissao,
+-- nao em cada policy: `usuario_role()` devolve null para quem esta inativo, e
+-- como `lojas_permitidas()` deriva dela, o acesso cai nas seis tabelas de uma
+-- vez. Uma unica linha de defesa, no lugar onde ja mora a regra.
+-- =====================================================================
+
+alter table public.usuarios
+  add column if not exists status text not null default 'ativo';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'usuarios_status_valido'
+  ) then
+    alter table public.usuarios
+      add constraint usuarios_status_valido check (status in ('ativo', 'inativo'));
+  end if;
+end $$;
+
+create index if not exists idx_usuarios_status on public.usuarios (status);
+
+-- ---------------------------------------------------------------------
+-- Helpers de permissao: passam a ignorar usuario inativo.
+-- O corpo e identico ao de 002_rls.sql, com o filtro de status somado.
+-- ---------------------------------------------------------------------
+create or replace function public.usuario_role()
+returns public.user_role
+language sql stable security definer set search_path = public
+as $$
+  select u.role from public.usuarios u where u.id = auth.uid() and u.status = 'ativo';
+$$;
+
+create or replace function public.usuario_franqueado_id()
+returns uuid
+language sql stable security definer set search_path = public
+as $$
+  select u.franqueado_id from public.usuarios u where u.id = auth.uid() and u.status = 'ativo';
+$$;
+
+create or replace function public.is_super_admin()
+returns boolean
+language sql stable security definer set search_path = public
+as $$
+  select coalesce(
+    (select u.role from public.usuarios u where u.id = auth.uid() and u.status = 'ativo') = 'super_admin',
+    false
+  );
+$$;
+
+create or replace function public.pode_gerenciar()
+returns boolean
+language sql stable security definer set search_path = public
+as $$
+  select coalesce(
+    (select u.role from public.usuarios u where u.id = auth.uid() and u.status = 'ativo')
+      in ('super_admin', 'franqueado'),
+    false
+  );
+$$;
+
+-- `lojas_permitidas()` nao muda: ela comeca por `usuario_role()`, que agora
+-- devolve null para o inativo e faz a funcao retornar conjunto vazio.
+
+-- ---------------------------------------------------------------------
+-- Um usuario inativo continua lendo a PROPRIA linha (policy usuarios_select
+-- permite `id = auth.uid()`). Isso e proposital: a aplicacao precisa ler o
+-- status para deslogar a pessoa com uma mensagem, em vez de mostrar uma tela
+-- vazia sem explicacao.
+-- ---------------------------------------------------------------------
+
+
+-- ---------------------------------------------------------------------
+-- >>> 005 · PROTECAO DOS CAMPOS SENSIVEIS DE public.usuarios
 -- ---------------------------------------------------------------------
 
 -- =====================================================================
@@ -112,7 +200,7 @@ create trigger trg_usuarios_campos_sensiveis
 
 
 -- ---------------------------------------------------------------------
--- >>> 006 · Anonimizacao (LGPD)
+-- >>> 006 · ANONIMIZACAO (LGPD)
 -- ---------------------------------------------------------------------
 
 -- =====================================================================
@@ -187,7 +275,7 @@ comment on function public.anonimizar_agendamentos_antigos(int) is
 
 
 -- ---------------------------------------------------------------------
--- >>> 007 · Lembrete de vespera
+-- >>> 007 · NOTIFICACOES (lembrete de vespera)
 -- ---------------------------------------------------------------------
 
 -- =====================================================================
@@ -290,7 +378,7 @@ comment on function public.agendamentos_para_lembrete(date) is
 
 
 -- ---------------------------------------------------------------------
--- >>> 008 · Registro de venda
+-- >>> 008 · VENDAS (fecha o funil)
 -- ---------------------------------------------------------------------
 
 -- =====================================================================
@@ -428,7 +516,7 @@ using (
 
 
 -- ---------------------------------------------------------------------
--- >>> 009 · Metas por agendador
+-- >>> 009 · METAS POR AGENDADOR
 -- ---------------------------------------------------------------------
 
 -- =====================================================================
@@ -523,7 +611,7 @@ with check (
 
 
 -- ---------------------------------------------------------------------
--- >>> 010 · Relatorio semanal
+-- >>> 010 · RELATORIO SEMANAL POR E-MAIL
 -- ---------------------------------------------------------------------
 
 -- =====================================================================
@@ -623,7 +711,7 @@ comment on function public.resumo_do_periodo(uuid, date, date) is
 
 
 -- ---------------------------------------------------------------------
--- >>> 011 · Venda trava a mudanca de status
+-- >>> 011 · VENDA TRAVA A MUDANCA DE STATUS
 -- ---------------------------------------------------------------------
 
 -- =====================================================================
@@ -680,7 +768,7 @@ create trigger trg_agendamentos_status_venda
 
 
 -- ---------------------------------------------------------------------
--- >>> 012 · Vinculo so dentro do proprio tenant
+-- >>> 012 · VINCULO SO DENTRO DO PROPRIO TENANT
 -- ---------------------------------------------------------------------
 
 -- =====================================================================
@@ -769,6 +857,10 @@ notify pgrst, 'reload schema';
 -- Roda depois de tudo e devolve uma linha por item esperado, com OK ou
 -- FALTANDO. Se alguma linha vier FALTANDO, o trecho correspondente acima
 -- nao foi aplicado — copie a mensagem de erro que o editor mostrou.
+--
+-- Usa to_regclass em vez do cast ::regclass: o cast levanta erro quando a
+-- tabela nao existe e derrubaria a consulta inteira, justamente no caso em
+-- que ela precisa reportar.
 -- =====================================================================
 with esperado(item, tipo, presente) as (
   values
@@ -778,14 +870,10 @@ with esperado(item, tipo, presente) as (
     ('agendamentos.anonimizado_em',     'coluna',
       (select count(*) > 0 from information_schema.columns
         where table_schema = 'public' and table_name = 'agendamentos' and column_name = 'anonimizado_em')),
-    ('notificacoes',                    'tabela',
-      (select to_regclass('public.notificacoes') is not null)),
-    ('vendas',                          'tabela',
-      (select to_regclass('public.vendas') is not null)),
-    ('metas',                           'tabela',
-      (select to_regclass('public.metas') is not null)),
-    ('envios_relatorio',                'tabela',
-      (select to_regclass('public.envios_relatorio') is not null)),
+    ('notificacoes',                    'tabela', (select to_regclass('public.notificacoes') is not null)),
+    ('vendas',                          'tabela', (select to_regclass('public.vendas') is not null)),
+    ('metas',                           'tabela', (select to_regclass('public.metas') is not null)),
+    ('envios_relatorio',                'tabela', (select to_regclass('public.envios_relatorio') is not null)),
     ('trg_usuarios_campos_sensiveis',   'trigger',
       (select count(*) > 0 from pg_trigger
         where tgrelid = to_regclass('public.usuarios') and tgname = 'trg_usuarios_campos_sensiveis')),

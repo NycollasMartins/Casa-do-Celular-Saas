@@ -16,7 +16,7 @@
 -- A mesma brecha permitia trocar o proprio `franqueado_id` (pular para
 -- outro tenant) e reativar o proprio `status` depois de desligado,
 -- desfazendo o encerramento de acesso feito pelo franqueado.
---pode seguir para a proxima etapa
+--
 -- POR QUE TRIGGER, E NAO POLICY
 -- Uma policy WITH CHECK enxerga apenas a linha NOVA; ela nao sabe qual era
 -- o papel antes e por isso nao consegue exigir "role nao mudou". O trigger

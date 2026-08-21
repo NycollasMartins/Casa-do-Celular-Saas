@@ -41,6 +41,12 @@ jobs:
       - name: Testes unitarios
         run: npm run test:unit
 
+      # O consolidado e o arquivo que alguem cola no SQL Editor. Gerado das
+      # migrations: se uma entrar e ninguem regerar, ele aplica um schema
+      # PARCIAL — o estado em que este projeto ja esteve.
+      - name: Consolidado em dia com as migrations
+        run: npm run consolidado:conferir
+
       # O build passa sem variavel de ambiente: nenhum modulo le configuracao
       # no carregamento, so dentro das funcoes. Isso e verificado aqui — se
       # alguem introduzir um `throw` em nivel de modulo, este passo quebra.

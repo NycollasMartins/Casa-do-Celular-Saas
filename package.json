@@ -18,7 +18,9 @@
     "lgpd:reter": "node scripts/anonimizar-antigos.mjs",
     "lembrete:vespera": "node scripts/lembrete-vespera.mjs",
     "relatorio:semanal": "node scripts/relatorio-semanal.mjs",
-    "verificar:banco": "bash scripts/verificar-banco.sh"
+    "verificar:banco": "bash scripts/verificar-banco.sh",
+    "consolidado:gerar": "node scripts/gerar-consolidado.mjs",
+    "consolidado:conferir": "node scripts/gerar-consolidado.mjs --conferir"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

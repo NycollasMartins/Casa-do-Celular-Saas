@@ -122,11 +122,16 @@ Abra `http://localhost:3000`. Sem sessão, o middleware manda para
 
 ## Banco de dados
 
-> **Atalho:** `supabase/APLICAR-PENDENTES.sql` reúne os passos 5 a 11 num
-> arquivo só, na ordem correta, e termina com uma consulta de conferência
-> que lista o que ficou faltando. É seguro rodar mais de uma vez — todo
-> comando é idempotente. Use-o se você não tem certeza de quais migrations
-> já aplicou.
+> **Atalho:** `supabase/APLICAR-PENDENTES.sql` reúne tudo que vem depois do
+> seed num arquivo só, na ordem correta, e termina com uma consulta de
+> conferência que lista o que ficou faltando. É seguro rodar mais de uma vez
+> — todo comando é idempotente. Use-o se você não tem certeza de quais
+> migrations já aplicou.
+>
+> O arquivo é **gerado** por `npm run consolidado:gerar`, e o CI falha se
+> ficar desatualizado. Antes ele era montado à mão: bastava uma migration
+> nova ser esquecida para o arquivo aplicar um schema parcial — que é
+> exatamente o estado em que este projeto já esteve.
 
 A ordem importa. São treze passos:
 
