@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mascararCpf, mascararTelefone, validarCpf } from '@/lib/utils';
-import { agendamentoSchema, hojeNaLoja, novoAgendamentoSchema } from '@/lib/validations/agendamento';
+import { agendamentoSchema, novoAgendamentoSchema } from '@/lib/validations/agendamento';
+import { hojeNaLoja } from '@/lib/semana';
 import { novaSenhaSchema } from '@/lib/validations/auth';
 
 describe('validarCpf', () => {
@@ -103,31 +104,6 @@ describe('novaSenhaSchema', () => {
     if (!resultado.success) {
       expect(resultado.error.flatten().fieldErrors.confirmacao).toBeTruthy();
     }
-  });
-});
-
-describe('hojeNaLoja', () => {
-  /**
-   * DEFEITO CORRIGIDO: a validacao usava o fuso do processo. No navegador do
-   * agendador isso era Brasilia e funcionava; no servidor, UTC. Depois das
-   * 21h, marcar visita para HOJE era aceito pelo formulario e recusado pela
-   * server action, com a mensagem "a data da visita deve ser hoje ou no
-   * futuro" — sobre a data de hoje.
-   */
-  it('usa o fuso das lojas, nao o do processo', () => {
-    // 01h UTC = 22h do dia anterior em Brasilia.
-    expect(hojeNaLoja(new Date('2026-08-21T01:00:00Z'))).toBe('2026-08-20');
-  });
-
-  it('vira o dia no horario de Brasilia, nao no de Greenwich', () => {
-    // 02h59 UTC ainda e 23h59 do dia anterior em Brasilia.
-    expect(hojeNaLoja(new Date('2026-08-21T02:59:00Z'))).toBe('2026-08-20');
-    // 03h00 UTC ja e meia-noite em Brasilia.
-    expect(hojeNaLoja(new Date('2026-08-21T03:00:00Z'))).toBe('2026-08-21');
-  });
-
-  it('funciona em horario comercial', () => {
-    expect(hojeNaLoja(new Date('2026-08-20T15:00:00Z'))).toBe('2026-08-20');
   });
 });
 

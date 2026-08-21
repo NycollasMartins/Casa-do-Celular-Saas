@@ -6,6 +6,8 @@
  * saber quem esta abaixo ANTES do fim do mes, nao depois.
  */
 
+import { hojeNaLoja } from '@/lib/semana';
+
 export type SituacaoMeta = 'sem_meta' | 'abaixo' | 'atencao' | 'no_alvo';
 
 export interface Meta {
@@ -51,15 +53,16 @@ export function fracaoDoMesDecorrida(competencia: string, hoje = new Date()): nu
   const [ano, mes] = competencia.slice(0, 7).split('-').map(Number);
   const diasNoMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
 
-  const anoHoje = hoje.getUTCFullYear();
-  const mesHoje = hoje.getUTCMonth() + 1;
+  // Fuso das lojas, nao UTC: as 22h de 31/08 o UTC ja e setembro, e a meta
+  // de agosto seria cobrada pelo alvo cheio uma noite antes da hora.
+  const [anoHoje, mesHoje, diaHoje] = hojeNaLoja(hoje).split('-').map(Number);
 
   // Mes ja fechado: cobranca e sobre o alvo cheio.
   if (anoHoje > ano || (anoHoje === ano && mesHoje > mes)) return 1;
   // Mes ainda nao comecou: nada a cobrar.
   if (anoHoje < ano || (anoHoje === ano && mesHoje < mes)) return 0;
 
-  return hoje.getUTCDate() / diasNoMes;
+  return diaHoje / diasNoMes;
 }
 
 /**
@@ -129,11 +132,15 @@ export const ROTULO_SITUACAO: Record<SituacaoMeta, string> = {
   no_alvo: 'No alvo',
 };
 
-/** Primeiro dia do mes de uma data, em ISO curto. */
+/**
+ * Primeiro dia do mes, no fuso das lojas.
+ *
+ * Usava getUTCMonth: em 31/08 as 22h de Brasilia o UTC ja e 01/09, e a tela
+ * de Metas abriria a competencia de setembro na ultima noite de agosto —
+ * justamente quando o gestor confere o fechamento do mes.
+ */
 export function competenciaDe(data = new Date()): string {
-  const ano = data.getUTCFullYear();
-  const mes = String(data.getUTCMonth() + 1).padStart(2, '0');
-  return `${ano}-${mes}-01`;
+  return `${hojeNaLoja(data).slice(0, 7)}-01`;
 }
 
 /** Ultimo dia do mes da competencia, para fechar o intervalo de consulta. */

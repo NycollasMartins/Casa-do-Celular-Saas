@@ -9,8 +9,18 @@
 
 export const FUSO_LOJA = 'America/Sao_Paulo';
 
-/** AAAA-MM-DD no fuso das lojas. Ver o comentario de fuso em lib/notificacoes.ts. */
-export function dataLocal(agora = new Date(), fuso = FUSO_LOJA): string {
+/**
+ * Hoje no fuso das LOJAS, em AAAA-MM-DD. Fonte unica do conceito.
+ *
+ * Existe porque a alternativa ja falhou cinco vezes neste projeto:
+ * `new Date()` pega o fuso de QUEM EXECUTA, e `toISOString()` devolve
+ * sempre UTC — nem o fuso local, nem o das lojas. O servidor da Vercel e da
+ * Netlify roda em UTC, que as 21h ja virou o dia, e ate no navegador do
+ * agendador o `toISOString()` mente pelo mesmo motivo.
+ *
+ * Toda decisao de negocio sobre "que dia e hoje" deve passar por aqui.
+ */
+export function hojeNaLoja(agora = new Date(), fuso = FUSO_LOJA): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: fuso,
     year: 'numeric',
@@ -44,7 +54,7 @@ export function semanaAnterior(agora = new Date(), fuso = FUSO_LOJA): {
   inicio: string;
   fim: string;
 } {
-  const segundaDesta = segundaFeiraDa(dataLocal(agora, fuso));
+  const segundaDesta = segundaFeiraDa(hojeNaLoja(agora, fuso));
   const inicio = somarDias(segundaDesta, -7);
   return { inicio, fim: somarDias(inicio, 6) };
 }

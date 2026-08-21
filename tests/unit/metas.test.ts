@@ -180,3 +180,29 @@ describe('competencia', () => {
     expect(fimDaCompetencia('2026-12-01')).toBe('2026-12-31');
   });
 });
+
+describe('fuso das lojas nas metas', () => {
+  /** 01h UTC de 01/09 = 22h de 31/08 em Brasilia. */
+  const ultimaNoiteDeAgosto = new Date('2026-09-01T01:00:00Z');
+
+  /**
+   * DEFEITO CORRIGIDO: competenciaDe usava getUTCMonth. Na ultima noite do
+   * mes, a tela de Metas abria a competencia seguinte — justamente quando o
+   * gestor confere o fechamento.
+   */
+  it('a competencia so vira quando o mes vira na loja', () => {
+    expect(competenciaDe(ultimaNoiteDeAgosto)).toBe('2026-08-01');
+    // 03h UTC ja e meia-noite em Brasilia.
+    expect(competenciaDe(new Date('2026-09-01T03:00:00Z'))).toBe('2026-09-01');
+  });
+
+  it('o mes nao e dado como fechado uma noite antes', () => {
+    // Ainda e 31/08 na loja: o mes corre, nao fechou.
+    expect(fracaoDoMesDecorrida('2026-08-01', ultimaNoiteDeAgosto)).toBeCloseTo(1, 5);
+    // E em 30/08 as 22h, faltava um dia.
+    expect(fracaoDoMesDecorrida('2026-08-01', new Date('2026-08-31T01:00:00Z'))).toBeCloseTo(
+      30 / 31,
+      5
+    );
+  });
+});

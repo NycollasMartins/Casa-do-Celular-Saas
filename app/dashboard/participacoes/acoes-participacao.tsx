@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { encerrarParticipacao, transferirParticipacao } from '@/app/actions/cadastros';
+import { hojeNaLoja } from '@/lib/semana';
 
 interface Props {
   id: string;
@@ -27,7 +28,7 @@ interface Props {
   lojas: { id: string; nome: string }[];
 }
 
-const hoje = () => new Date().toISOString().slice(0, 10);
+const hoje = () => hojeNaLoja();
 
 export function AcoesParticipacao({ id, pessoa, lojaAtual, lojaAtualId, percentual, lojas }: Props) {
   const router = useRouter();

@@ -38,6 +38,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { StatusFilter } from './status-filter';
 import { deletarAgendamento } from '@/app/actions/agendamentos';
 import { STATUS_LABEL, cn, formatarDataIso } from '@/lib/utils';
+import { hojeNaLoja } from '@/lib/semana';
 import type { AgendamentoComRelacoes, AgendamentoStatus, UserRole, Venda } from '@/lib/types/database';
 import { VendaForm } from '@/components/forms/venda-form';
 import { formatarBrl } from '@/lib/dinheiro';
@@ -152,7 +153,9 @@ export function AgendamentosTable({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `agendamentos-${new Date().toISOString().slice(0, 10)}.csv`;
+    // Fonte unica tambem aqui. O nome do arquivo e cosmetico, mas deixar a
+    // excecao convida a proxima: quem copiar esta linha copia o bug.
+    link.download = `agendamentos-${hojeNaLoja()}.csv`;
     link.click();
     URL.revokeObjectURL(url);
     toast.success(`${filtrados.length} agendamentos exportados.`);

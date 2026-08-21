@@ -18,6 +18,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { criarParticipacao } from '@/app/actions/cadastros';
+import { hojeNaLoja } from '@/lib/semana';
 
 interface Props {
   socios: { id: string; nome: string; role: string }[];
@@ -30,7 +31,7 @@ export function NovaParticipacaoDialog({ socios, lojas }: Props) {
   const [usuarioId, setUsuarioId] = useState('');
   const [lojaId, setLojaId] = useState('');
   const [percentual, setPercentual] = useState('30');
-  const [dataInicio, setDataInicio] = useState(new Date().toISOString().slice(0, 10));
+  const [dataInicio, setDataInicio] = useState(hojeNaLoja());
   const [processando, iniciar] = useTransition();
 
   function aoSalvar() {

@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { registrarVenda, atualizarVenda } from '@/app/actions/agendamentos';
 import { formatarBrl, lerValorBrl } from '@/lib/dinheiro';
 import type { Venda } from '@/lib/types/database';
+import { hojeNaLoja } from '@/lib/semana';
 
 interface Props {
   agendamentoId: string;
@@ -25,7 +26,7 @@ export function VendaForm({ agendamentoId, venda, onSalvo }: Props) {
   );
   const [descricao, setDescricao] = useState(venda?.descricao ?? '');
   const [dataVenda, setDataVenda] = useState(
-    venda?.data_venda ?? new Date().toISOString().slice(0, 10)
+    venda?.data_venda ?? hojeNaLoja()
   );
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, iniciar] = useTransition();

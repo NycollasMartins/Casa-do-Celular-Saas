@@ -14,11 +14,16 @@ import {
   usuarioSchema,
 } from '@/lib/validations/cadastros';
 import { planejarVinculos, selecionarParaReabrir, tabelaDoVinculo } from '@/lib/vinculos';
+import { hojeNaLoja } from '@/lib/semana';
 import type { ResultadoAction } from './agendamentos';
 
-/** Data de hoje em ISO curto, formato aceito pelas colunas `date`. */
+/**
+ * Hoje para as colunas `date`. Delega a fonte unica: toISOString devolveria
+ * UTC, e o servidor roda em UTC — as 22h de Brasilia, os vinculos nasceriam
+ * datados de amanha.
+ */
 function hoje(): string {
-  return new Date().toISOString().slice(0, 10);
+  return hojeNaLoja();
 }
 
 function objeto(formData: FormData): Record<string, string> {

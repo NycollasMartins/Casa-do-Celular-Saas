@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dataLocal, diaEMes, segundaFeiraDa, semanaAnterior } from '@/lib/semana';
+import { diaEMes, hojeNaLoja, segundaFeiraDa, semanaAnterior } from '@/lib/semana';
 
 describe('segundaFeiraDa', () => {
   it('devolve a propria data quando ja e segunda', () => {
@@ -69,10 +69,10 @@ describe('semanaAnterior', () => {
   });
 });
 
-describe('dataLocal', () => {
+describe('hojeNaLoja', () => {
   it('usa o fuso das lojas, nao o UTC', () => {
     // 02h UTC = 23h do dia anterior em Brasilia.
-    expect(dataLocal(new Date('2026-08-21T02:00:00Z'))).toBe('2026-08-20');
+    expect(hojeNaLoja(new Date('2026-08-21T02:00:00Z'))).toBe('2026-08-20');
   });
 });
 

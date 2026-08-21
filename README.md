@@ -700,6 +700,17 @@ falhar: abre no destino e, se o encerramento da origem falhar, desfaz a
 abertura. O pior estado possível é "continua na origem", nunca "perdeu as
 duas".
 
+**"Hoje" tem uma fonte única: `hojeNaLoja`, em `lib/semana.ts`.** Nenhuma
+decisão de negócio sobre data usa `new Date()` direto. A razão é empírica:
+esse erro apareceu **cinco vezes** neste projeto — lembrete de véspera,
+relatório semanal, janela do dashboard, validação da data da visita e o
+valor padrão do formulário.
+
+Duas armadilhas distintas, e as duas mordem. `new Date()` pega o fuso de
+quem executa: no navegador do agendador é Brasília, no servidor da Vercel é
+UTC. E `toISOString()` devolve **sempre UTC** — nem o local, nem o das
+lojas —, então até no navegador ele mente depois das 21h.
+
 **"Hoje" é sempre o hoje das lojas, nunca o do processo.** A validação que
 exige visita de hoje em diante comparava com o fuso de quem executava: no
 navegador do agendador era Brasília e funcionava, no servidor é UTC. Depois

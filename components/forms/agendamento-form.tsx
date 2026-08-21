@@ -16,6 +16,7 @@ import type { AgendamentoInput } from '@/lib/validations/agendamento';
 import { criarAgendamento, atualizarAgendamento } from '@/app/actions/agendamentos';
 import { STATUS_LABEL, mascararCpf, mascararTelefone } from '@/lib/utils';
 import type { Agendamento, UserRole } from '@/lib/types/database';
+import { hojeNaLoja } from '@/lib/semana';
 
 interface Props {
   role: UserRole;
@@ -48,7 +49,7 @@ export function AgendamentoForm({ role, lojas, agendamento }: Props) {
       cliente_email: agendamento?.cliente_email ?? '',
       cliente_cpf: agendamento?.cliente_cpf ?? '',
       cliente_telefone: agendamento?.cliente_telefone ?? '',
-      data_agendamento: agendamento?.data_agendamento ?? new Date().toISOString().slice(0, 10),
+      data_agendamento: agendamento?.data_agendamento ?? hojeNaLoja(),
       status: agendamento?.status ?? 'contatado',
       observacoes: agendamento?.observacoes ?? '',
       loja_id: agendamento?.loja_id ?? lojas[0]?.id ?? '',
