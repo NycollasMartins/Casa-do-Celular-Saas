@@ -659,9 +659,23 @@ autenticação por e-mail e senha em *Authentication → Providers*.
 ambiente (com `NEXT_PUBLIC_SITE_URL` apontando para o domínio de produção) e
 faça o deploy. Cada push na `main` publica automaticamente.
 
-**Confira a configuração em `/api/saude`.** Logo depois de publicar, abra
-essa rota no domínio novo: ela responde `200` quando está tudo no lugar e
-`503` listando o que falta e o que deixa de funcionar sem cada variável.
+**Confira o deploy em `/api/saude`.** Logo depois de publicar, abra essa
+rota no domínio novo. Ela responde `200` quando está tudo pronto e `503`
+listando o que falta — em duas frentes:
+
+- **Ambiente:** quais variáveis estão ausentes e o que deixa de funcionar
+  sem cada uma.
+- **Banco:** quais migrations ainda não foram aplicadas, pelo número.
+
+A segunda existe porque nada liga o código publicado ao schema aplicado: dá
+para subir uma versão que usa `vendas` num banco que não tem `vendas`, e o
+erro só aparece quando alguém abre a tela. Este projeto já viveu isso, com
+parte das migrations aplicada e parte não, sem ninguém saber quais.
+
+A sondagem é indireta — o PostgREST não expõe `information_schema` —, então
+uma função recém-criada pode aparecer como ausente por causa do cache. A
+resposta diz isso e sugere o `notify pgrst` antes de concluir que a
+migration não rodou.
 
 A rota é aberta e não passa pelo Supabase de propósito — o momento em que
 ela é mais necessária é justamente quando ninguém consegue entrar. Nunca

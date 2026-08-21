@@ -165,7 +165,41 @@ export type Database = {
       envios_relatorio: Tabela<EnvioRelatorio>;
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    /**
+     * Funcoes chamadas por RPC. Sem elas declaradas, `supabase.rpc(nome, args)`
+     * tipa os argumentos como `undefined` e qualquer chamada com parametro
+     * falha no typecheck.
+     */
+    Functions: {
+      agendamentos_para_lembrete: {
+        Args: { p_data: string };
+        Returns: {
+          id: string;
+          cliente_nome: string;
+          cliente_email: string | null;
+          cliente_telefone: string;
+          data_agendamento: string;
+          loja_nome: string;
+        }[];
+      };
+      anonimizar_agendamentos_antigos: {
+        Args: { meses: number };
+        /** Quantos registros foram tratados. */
+        Returns: number;
+      };
+      resumo_do_periodo: {
+        Args: { p_franqueado_id: string; p_inicio: string; p_fim: string };
+        Returns: {
+          contatos: number;
+          agendados: number;
+          compareceram: number;
+          nao_compareceram: number;
+          vendas: number;
+          receita: number;
+          melhor_loja: string | null;
+        }[];
+      };
+    };
     Enums: { user_role: UserRole };
     CompositeTypes: Record<string, never>;
   };
