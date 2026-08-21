@@ -610,6 +610,13 @@ de linhas para somar quatro números seria desperdício.
 Franqueado sem movimento na semana não recebe e-mail: relatório vazio treina
 o destinatário a ignorar a mensagem.
 
+**A taxa de comparecimento do e-mail usa o mesmo denominador do dashboard** —
+visitas com desfecho conhecido, não todas as marcadas. Denominadores
+diferentes fariam o mesmo período render dois números, e o franqueado
+confiaria no menos favorável. As visitas que ficaram sem desfecho aparecem
+em linha própria, porque são acionáveis: alguém precisa marcar o que
+aconteceu.
+
 ---
 
 ## Deploy

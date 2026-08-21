@@ -46,8 +46,8 @@ const semanaForcada = indiceSemana >= 0 ? argumentos[indiceSemana + 1] : null;
 
 const FUSO = 'America/Sao_Paulo';
 
-/** Espelha lib/semana.ts. Ver os comentarios de fuso e de segunda-feira la. */
-function dataLocal(agora = new Date()) {
+/** Espelha hojeNaLoja de lib/semana.ts. Ver la os comentarios de fuso. */
+function hojeNaLoja(agora = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: FUSO,
     year: 'numeric',
@@ -69,7 +69,7 @@ function segundaFeiraDa(iso) {
 }
 
 function semanaAnterior(agora = new Date()) {
-  const inicio = somarDias(segundaFeiraDa(dataLocal(agora)), -7);
+  const inicio = somarDias(segundaFeiraDa(hojeNaLoja(agora)), -7);
   return { inicio, fim: somarDias(inicio, 6) };
 }
 
@@ -90,12 +90,20 @@ function pct(numerador, denominador) {
 }
 
 function montarCorpo(franqueado, resumo, semana) {
+  const concluidas = Number(resumo.compareceram) + Number(resumo.nao_compareceram);
+
   const linhas = [
     `Resumo de ${diaEMes(semana.inicio)} a ${diaEMes(semana.fim)}`,
     '',
     `Contatos:        ${resumo.contatos}`,
     `Agendamentos:    ${resumo.agendados} (${pct(resumo.agendados, resumo.contatos)} dos contatos)`,
-    `Compareceram:    ${resumo.compareceram} (${pct(resumo.compareceram, resumo.agendados)} dos agendados)`,
+    // Denominador: visitas com desfecho CONHECIDO, nao todas as marcadas.
+    //
+    // Precisa casar com a conta do dashboard, senao o mesmo periodo daria
+    // dois numeros — e o franqueado confiaria no menos favoravel. Quem
+    // marcou para uma data ja passada e ficou com status 'agendado' porque
+    // ninguem atualizou dilui a taxa sem dizer nada sobre comparecimento.
+    `Compareceram:    ${resumo.compareceram} (${pct(resumo.compareceram, concluidas)} das visitas com desfecho)`,
     `Nao apareceram:  ${resumo.nao_compareceram}`,
   ];
 
@@ -104,6 +112,15 @@ function montarCorpo(franqueado, resumo, semana) {
       `Vendas:          ${resumo.vendas}`,
       `Faturamento:     ${brl(resumo.receita)}`,
       `Ticket medio:    ${brl(Number(resumo.receita) / Number(resumo.vendas))}`
+    );
+  }
+
+  // Visitas da semana que ficaram sem desfecho. Nao entram na taxa acima, e
+  // sao acionaveis: alguem precisa marcar o que aconteceu.
+  const semDesfecho = Number(resumo.agendados) - concluidas;
+  if (semDesfecho > 0) {
+    linhas.push(
+      `Sem desfecho:    ${semDesfecho} (marque se compareceu ou nao)`
     );
   }
 
