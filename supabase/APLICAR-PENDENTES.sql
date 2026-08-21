@@ -883,6 +883,12 @@ with esperado(item, tipo, presente) as (
     ('trg_participacoes_tenant',        'trigger',
       (select count(*) > 0 from pg_trigger
         where tgrelid = to_regclass('public.participacoes_societarias') and tgname = 'trg_participacoes_tenant')),
+    ('trg_vendas_updated_at',           'trigger',
+      (select count(*) > 0 from pg_trigger
+        where tgrelid = to_regclass('public.vendas') and tgname = 'trg_vendas_updated_at')),
+    ('trg_metas_updated_at',            'trigger',
+      (select count(*) > 0 from pg_trigger
+        where tgrelid = to_regclass('public.metas') and tgname = 'trg_metas_updated_at')),
     ('trg_agendamentos_status_venda',   'trigger',
       (select count(*) > 0 from pg_trigger
         where tgrelid = to_regclass('public.agendamentos') and tgname = 'trg_agendamentos_status_venda')),
