@@ -101,7 +101,9 @@ export function UsuarioEdicaoForm({ usuario, lojas, lojaAtualId, onSalvo }: Prop
         </Select>
         {errors.loja_id ? <p className="text-xs text-danger">{errors.loja_id.message}</p> : null}
         <p className="text-xs text-slate-400">
-          Trocar de loja encerra o vinculo atual e abre um novo, preservando o historico.
+          {role === 'agendador'
+            ? 'Trocar de loja encerra a lotacao atual e abre uma nova, preservando o historico.'
+            : 'Quem participa de mais de uma loja e transferido pela tela Societario, nao por aqui.'}
         </p>
       </div>
 

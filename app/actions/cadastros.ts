@@ -13,6 +13,7 @@ import {
   usuarioEdicaoSchema,
   usuarioSchema,
 } from '@/lib/validations/cadastros';
+import { planejarVinculos } from '@/lib/vinculos';
 import type { ResultadoAction } from './agendamentos';
 
 function objeto(formData: FormData): Record<string, string> {
@@ -173,6 +174,30 @@ export async function atualizarUsuario(id: string, formData: FormData): Promise<
 
   const supabase = createClient();
 
+  // Le TODOS os vinculos ativos. Um diretor pode ter varias participacoes —
+  // no seed, o diretor 1 tem cinco —, entao consultar com maybeSingle aqui
+  // devolvia erro que era ignorado, e o plano era montado como se nao
+  // houvesse participacao nenhuma.
+  const [{ data: agendadorAtivos }, { data: participacaoAtivas }] = await Promise.all([
+    supabase.from('agendadores_lojas').select('id, loja_id').eq('usuario_id', id).is('data_fim', null),
+    supabase
+      .from('participacoes_societarias')
+      .select('id, loja_id')
+      .eq('usuario_id', id)
+      .is('data_fim', null),
+  ]);
+
+  const plano = planejarVinculos({
+    papel: dados.role,
+    lojaEscolhida: dados.loja_id,
+    agendadorAtivos: agendadorAtivos ?? [],
+    participacaoAtivas: participacaoAtivas ?? [],
+  });
+
+  // Recusa antes de escrever qualquer coisa: melhor nao fazer nada do que
+  // fazer metade.
+  if (plano.recusa) return { sucesso: false, mensagem: plano.recusa };
+
   const { error: erroPerfil } = await supabase
     .from('usuarios')
     .update({ nome: dados.nome, role: dados.role })
@@ -180,66 +205,56 @@ export async function atualizarUsuario(id: string, formData: FormData): Promise<
 
   if (erroPerfil) return { sucesso: false, mensagem: `Nao foi possivel salvar: ${erroPerfil.message}` };
 
-  if (dados.loja_id) {
-    if (dados.role === 'agendador') {
-      const { data: vinculo } = await supabase
+  if (plano.encerrarAgendador.length > 0) {
+    await supabase
+      .from('agendadores_lojas')
+      .update({ data_fim: hoje() })
+      .in('id', plano.encerrarAgendador);
+  }
+
+  if (plano.encerrarParticipacao.length > 0) {
+    await supabase
+      .from('participacoes_societarias')
+      .update({ data_fim: hoje() })
+      .in('id', plano.encerrarParticipacao);
+  }
+
+  if (plano.abrirAgendador) {
+    // `agendadores_lojas` tem unique (usuario_id, loja_id) sem filtro de
+    // data_fim — diferente de participacoes_societarias, cujo indice e
+    // parcial. Quem volta a uma loja onde ja esteve tem a linha antiga
+    // reaberta; inserir de novo violaria a constraint.
+    const { data: anterior } = await supabase
+      .from('agendadores_lojas')
+      .select('id')
+      .eq('usuario_id', id)
+      .eq('loja_id', plano.abrirAgendador)
+      .maybeSingle();
+
+    if (anterior) {
+      await supabase
         .from('agendadores_lojas')
-        .select('id, loja_id')
-        .eq('usuario_id', id)
-        .is('data_fim', null)
-        .maybeSingle();
-
-      if (vinculo?.loja_id !== dados.loja_id) {
-        if (vinculo) {
-          await supabase.from('agendadores_lojas').update({ data_fim: hoje() }).eq('id', vinculo.id);
-        }
-
-        // `agendadores_lojas` tem unique (usuario_id, loja_id) sem filtro de
-        // data_fim — diferente de participacoes_societarias, cujo indice e
-        // parcial. Quem volta a uma loja onde ja esteve tem a linha antiga
-        // reaberta; inserir de novo violaria a constraint.
-        const { data: anterior } = await supabase
-          .from('agendadores_lojas')
-          .select('id')
-          .eq('usuario_id', id)
-          .eq('loja_id', dados.loja_id)
-          .maybeSingle();
-
-        if (anterior) {
-          await supabase
-            .from('agendadores_lojas')
-            .update({ data_inicio: hoje(), data_fim: null })
-            .eq('id', anterior.id);
-        } else {
-          await supabase
-            .from('agendadores_lojas')
-            .insert({ usuario_id: id, loja_id: dados.loja_id, data_inicio: hoje() });
-        }
-      }
+        .update({ data_inicio: hoje(), data_fim: null })
+        .eq('id', anterior.id);
     } else {
-      const { data: participacao } = await supabase
-        .from('participacoes_societarias')
-        .select('id, loja_id')
-        .eq('usuario_id', id)
-        .is('data_fim', null)
-        .maybeSingle();
-
-      if (participacao?.loja_id !== dados.loja_id) {
-        if (participacao) {
-          await supabase.from('participacoes_societarias').update({ data_fim: hoje() }).eq('id', participacao.id);
-        }
-        await supabase.from('participacoes_societarias').insert({
-          usuario_id: id,
-          loja_id: dados.loja_id,
-          percentual_participacao: dados.percentual_participacao ?? 100,
-          cargo: dados.role === 'franqueado' ? 'franqueado' : 'diretor',
-          data_inicio: hoje(),
-        });
-      }
+      await supabase
+        .from('agendadores_lojas')
+        .insert({ usuario_id: id, loja_id: plano.abrirAgendador, data_inicio: hoje() });
     }
   }
 
+  if (plano.abrirParticipacao) {
+    await supabase.from('participacoes_societarias').insert({
+      usuario_id: id,
+      loja_id: plano.abrirParticipacao,
+      percentual_participacao: dados.percentual_participacao ?? 100,
+      cargo: dados.role === 'franqueado' ? 'franqueado' : 'diretor',
+      data_inicio: hoje(),
+    });
+  }
+
   revalidatePath('/dashboard/usuarios');
+  revalidatePath('/dashboard/participacoes');
   revalidatePath('/dashboard');
   return { sucesso: true, mensagem: 'Usuario atualizado.' };
 }
