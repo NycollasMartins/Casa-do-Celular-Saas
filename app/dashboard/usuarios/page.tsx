@@ -5,7 +5,7 @@ import { UsuarioDialog } from './novo-usuario-dialog';
 import { AcoesUsuario } from './acoes-usuario';
 import { exigirRole } from '@/lib/auth/session';
 import { createClient } from '@/lib/supabase/server';
-import { buscarLojasDoUsuario } from '@/lib/supabase/queries';
+import { buscarLojasDoUsuario, lerPaginado } from '@/lib/supabase/queries';
 import { ROLE_LABEL } from '@/lib/utils';
 import type { AgendadorLoja, ParticipacaoSocietaria, Usuario } from '@/lib/types/database';
 import { LinhaVazia } from '@/components/ui/linha-vazia';
@@ -27,14 +27,42 @@ export default async function UsuariosPage() {
   // Os vinculos vigentes alimentam o formulario de edicao: sem eles o select
   // de loja abriria sempre na primeira da lista, sugerindo uma troca que o
   // gestor nao pediu.
-  const [{ data }, lojas, { data: vinculos }, { data: participacoes }] = await Promise.all([
-    supabase.from('usuarios').select('*').order('status').order('role').order('nome'),
+  // Leitura completa, nao a primeira pagina. O aviso de vinculo duplicado
+  // logo abaixo depende disso: com a lista cortada, a pessoa com duas lotacoes
+  // pode cair fora do pedaco lido e o aviso some — dizendo que esta tudo certo
+  // justamente quando nao esta.
+  const [usuarios, lojas, vinculos, participacoes] = await Promise.all([
+    lerPaginado<Usuario>(
+      (de, ate) =>
+        supabase
+          .from('usuarios')
+          .select('*')
+          .order('status')
+          .order('role')
+          .order('nome')
+          .range(de, ate),
+      { oQue: 'a equipe' }
+    ),
     buscarLojasDoUsuario(),
-    supabase.from('agendadores_lojas').select('usuario_id, loja_id').is('data_fim', null),
-    supabase.from('participacoes_societarias').select('usuario_id, loja_id').is('data_fim', null),
+    lerPaginado<Pick<AgendadorLoja, 'usuario_id' | 'loja_id'>>(
+      (de, ate) =>
+        supabase
+          .from('agendadores_lojas')
+          .select('usuario_id, loja_id')
+          .is('data_fim', null)
+          .range(de, ate),
+      { oQue: 'as lotacoes' }
+    ),
+    lerPaginado<Pick<ParticipacaoSocietaria, 'usuario_id' | 'loja_id'>>(
+      (de, ate) =>
+        supabase
+          .from('participacoes_societarias')
+          .select('usuario_id, loja_id')
+          .is('data_fim', null)
+          .range(de, ate),
+      { oQue: 'as participacoes' }
+    ),
   ]);
-
-  const usuarios = (data ?? []) as Usuario[];
 
   // Um vinculo por pessoa e a regra. Mais de um acontece quando
   // `atualizarUsuario` abre o novo e falha ao encerrar o antigo — ela abre
@@ -50,12 +78,8 @@ export default async function UsuariosPage() {
   // para lotacao, editar e salvar resolve (planejarVinculos encerra as
   // paralelas); para participacao, planejarVinculos RECUSA de proposito, por
   // nao dar para adivinhar qual das sociedades o gestor quis mover.
-  const lotacoes = agruparVinculosPorUsuario(
-    (vinculos ?? []) as Pick<AgendadorLoja, 'usuario_id' | 'loja_id'>[]
-  );
-  const sociedades = agruparVinculosPorUsuario(
-    (participacoes ?? []) as Pick<ParticipacaoSocietaria, 'usuario_id' | 'loja_id'>[]
-  );
+  const lotacoes = agruparVinculosPorUsuario(vinculos);
+  const sociedades = agruparVinculosPorUsuario(participacoes);
 
   const lojaPorUsuario = new Map<string, string>();
   for (const [usuarioId, lojasDoUsuario] of [...lotacoes, ...sociedades]) {

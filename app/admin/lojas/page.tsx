@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { createClient } from '@/lib/supabase/server';
 import { LinhaVazia } from '@/components/ui/linha-vazia';
+import { lerPaginado } from '@/lib/supabase/queries';
 
 export const metadata = { title: 'Todas as lojas · Admin' };
 
@@ -19,12 +20,17 @@ interface LinhaLoja {
 export default async function AdminLojasPage() {
   const supabase = createClient();
 
-  const { data } = await supabase
-    .from('lojas')
-    .select('id, nome, codigo_loja, cidade, estado, status, franqueado:franqueados!lojas_franqueado_id_fkey (nome)')
-    .order('nome');
-
-  const lojas = (data ?? []) as unknown as LinhaLoja[];
+  const lojas = (await lerPaginado(
+    (de, ate) =>
+      supabase
+        .from('lojas')
+        .select(
+          'id, nome, codigo_loja, cidade, estado, status, franqueado:franqueados!lojas_franqueado_id_fkey (nome)'
+        )
+        .order('nome')
+        .range(de, ate),
+    { oQue: 'as lojas da rede' }
+  )) as unknown as LinhaLoja[];
 
   return (
     <div className="space-y-6">

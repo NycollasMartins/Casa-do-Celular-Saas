@@ -7,6 +7,7 @@ import { FranqueadoDialog } from './franqueado-dialog';
 import { createClient } from '@/lib/supabase/server';
 import type { Franqueado } from '@/lib/types/database';
 import { LinhaVazia } from '@/components/ui/linha-vazia';
+import { lerPaginado } from '@/lib/supabase/queries';
 
 export const metadata = { title: 'Franqueados · Admin' };
 
@@ -14,8 +15,10 @@ const VARIANTE = { ativo: 'success', pendente: 'warning', inativo: 'neutral' } a
 
 export default async function FranqueadosPage() {
   const supabase = createClient();
-  const { data } = await supabase.from('franqueados').select('*').order('nome');
-  const franqueados = (data ?? []) as Franqueado[];
+  const franqueados = await lerPaginado<Franqueado>(
+    (de, ate) => supabase.from('franqueados').select('*').order('nome').range(de, ate),
+    { oQue: 'os franqueados' }
+  );
 
   return (
     <div className="space-y-6">

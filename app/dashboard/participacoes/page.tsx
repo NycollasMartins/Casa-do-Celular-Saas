@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { exigirRole } from '@/lib/auth/session';
 import { createClient } from '@/lib/supabase/server';
-import { buscarLojasDoUsuario } from '@/lib/supabase/queries';
+import { buscarLojasDoUsuario, lerPaginado } from '@/lib/supabase/queries';
 import { formatarDataIso, formatarPercentual } from '@/lib/utils';
 import { AcoesParticipacao } from './acoes-participacao';
 import { NovaParticipacaoDialog } from './nova-participacao-dialog';
@@ -25,13 +25,27 @@ export default async function ParticipacoesPage() {
   await exigirRole(['super_admin', 'franqueado']);
   const supabase = createClient();
 
-  const [{ data: participacoes }, { data: pessoas }, lojas] = await Promise.all([
-    supabase
-      .from('participacoes_societarias')
-      .select('id, usuario_id, loja_id, percentual_participacao, cargo, data_inicio, data_fim')
-      .order('data_fim', { ascending: true, nullsFirst: true })
-      .order('data_inicio', { ascending: false }),
-    supabase.from('usuarios').select('*').in('role', ['franqueado', 'diretor']).order('nome'),
+  const [participacoes, pessoas, lojas] = await Promise.all([
+    lerPaginado(
+      (de, ate) =>
+        supabase
+          .from('participacoes_societarias')
+          .select('id, usuario_id, loja_id, percentual_participacao, cargo, data_inicio, data_fim')
+          .order('data_fim', { ascending: true, nullsFirst: true })
+          .order('data_inicio', { ascending: false })
+          .range(de, ate),
+      { oQue: 'as participacoes' }
+    ),
+    lerPaginado(
+      (de, ate) =>
+        supabase
+          .from('usuarios')
+          .select('*')
+          .in('role', ['franqueado', 'diretor'])
+          .order('nome')
+          .range(de, ate),
+      { oQue: 'os gestores' }
+    ),
     buscarLojasDoUsuario(),
   ]);
 

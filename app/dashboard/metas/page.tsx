@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { exigirRole } from '@/lib/auth/session';
 import { createClient } from '@/lib/supabase/server';
-import { buscarAgendadoresAtivos, desempenhoNaCompetencia } from '@/lib/supabase/queries';
+import { buscarAgendadoresAtivos, desempenhoNaCompetencia, lerPaginado } from '@/lib/supabase/queries';
 import { competenciaDe, fimDaCompetencia } from '@/lib/metas';
 import { formatarDataIso } from '@/lib/utils';
 import type { ParametrosBusca } from '@/lib/filtros';
@@ -25,10 +25,14 @@ export default async function MetasPage({ searchParams }: { searchParams: Parame
   const competencia = lerCompetencia(searchParams);
   const supabase = createClient();
 
-  const [desempenho, agendadores, { data: metasBrutas }] = await Promise.all([
+  const [desempenho, agendadores, metasBrutas] = await Promise.all([
     desempenhoNaCompetencia(competencia),
     buscarAgendadoresAtivos(),
-    supabase.from('metas').select('*').eq('competencia', competencia),
+    lerPaginado<MetaAgendador>(
+      (de, ate) =>
+        supabase.from('metas').select('*').eq('competencia', competencia).range(de, ate),
+      { oQue: 'as metas' }
+    ),
   ]);
 
   // A lista parte de quem PODE receber meta, nao de quem teve movimento.
@@ -53,7 +57,7 @@ export default async function MetasPage({ searchParams }: { searchParams: Parame
   });
 
   const metas: Record<string, MetaAgendador> = {};
-  for (const meta of (metasBrutas ?? []) as MetaAgendador[]) {
+  for (const meta of metasBrutas) {
     metas[meta.usuario_id] = meta;
   }
 
