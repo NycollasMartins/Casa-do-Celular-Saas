@@ -115,6 +115,62 @@ const TAMANHO_PAGINA = 1000;
  */
 const TETO_LEITURA = 50_000;
 
+interface RespostaDePagina<T> {
+  data: T[] | null;
+  error: { message: string } | null;
+}
+
+/**
+ * Le TODAS as linhas de uma consulta, pagina por pagina.
+ *
+ * POR QUE ISTO E UM HELPER E NAO UM LACO SOLTO
+ * O PostgREST corta toda resposta em `db-max-rows` — no Supabase, o "Max rows"
+ * de Settings > API, com padrao 1000. Consulta sem paginacao nao devolve erro
+ * quando estoura: devolve MENOS linhas, calada. Nesta base isso ja produziu
+ * defeito duas vezes, em lugares diferentes, e a segunda foi escrita depois de
+ * a primeira ter sido corrigida. Enquanto o laco for copiado, vai reaparecer.
+ *
+ * Duas armadilhas, ambas resolvidas aqui:
+ *
+ *  - Parar quando a pagina vem menor que a pedida: com o teto do servidor
+ *    abaixo de TAMANHO_PAGINA, TODA pagina vem menor e o laco encerraria na
+ *    primeira.
+ *  - Avancar de TAMANHO_PAGINA em TAMANHO_PAGINA enquanto o servidor entrega
+ *    menos: somem as linhas do meio.
+ *
+ * Por isso o avanco segue o tamanho REAL da resposta e a saida so acontece com
+ * pagina vazia. Custa uma requisicao a mais no fim.
+ */
+export async function lerPaginado<T>(
+  buscarPagina: (de: number, ate: number) => PromiseLike<RespostaDePagina<T>>,
+  opcoes: { oQue: string; teto?: number; mensagemDoTeto?: (teto: number) => string }
+): Promise<T[]> {
+  const teto = opcoes.teto ?? TETO_LEITURA;
+  const linhas: T[] = [];
+
+  for (let inicio = 0; ; ) {
+    const { data, error } = await buscarPagina(inicio, inicio + TAMANHO_PAGINA - 1);
+
+    if (error) throw new Error(`Nao foi possivel carregar ${opcoes.oQue}: ${error.message}`);
+
+    const pagina = data ?? [];
+    linhas.push(...pagina);
+    inicio += pagina.length;
+
+    if (pagina.length === 0) break;
+
+    if (linhas.length >= teto) {
+      throw new Error(
+        opcoes.mensagemDoTeto?.(teto) ??
+          `A consulta de ${opcoes.oQue} passou de ${teto.toLocaleString('pt-BR')} linhas. ` +
+            'Reduza o intervalo ou filtre mais.'
+      );
+    }
+  }
+
+  return linhas;
+}
+
 export async function buscarAgendamentos(
   filtros: FiltroAgendamentos = {}
 ): Promise<AgendamentoComRelacoes[]> {
@@ -169,46 +225,16 @@ export async function buscarAgendamentos(
     return (data ?? []) as unknown as AgendamentoComRelacoes[];
   }
 
-  const linhas: unknown[] = [];
-
-  // O PostgREST tem teto proprio de linhas por resposta — no Supabase e o
-  // "Max rows" em Settings > API, com padrao 1000. Hoje ele COINCIDE com
-  // TAMANHO_PAGINA, e a paginacao so funciona por causa dessa coincidencia.
-  //
-  // Duas armadilhas moram aqui, e as duas produzem numero errado calado:
-  //
-  //  - Parar quando a pagina vem menor que a pedida: com o teto em 500, TODA
-  //    pagina vem menor, e o laco encerrava na primeira. As metricas passariam
-  //    a somar 500 registros de milhares. E o mesmo defeito descrito acima,
-  //    entrando por outra porta.
-  //
-  //  - Avancar de TAMANHO_PAGINA em TAMANHO_PAGINA enquanto o servidor entrega
-  //    menos: as linhas entre o que veio e o proximo salto somem do meio.
-  //
-  // Por isso o avanco segue o tamanho REAL da resposta e a saida so acontece
-  // com pagina vazia. Custa uma requisicao a mais no fim; paga com imunidade
-  // a qualquer teto que o servidor imponha.
-  for (let inicioPagina = 0; ; ) {
-    const { data, error } = await montarConsulta().range(
-      inicioPagina,
-      inicioPagina + TAMANHO_PAGINA - 1
-    );
-
-    if (error) throw new Error(`Nao foi possivel carregar os agendamentos: ${error.message}`);
-
-    const pagina = data ?? [];
-    linhas.push(...pagina);
-    inicioPagina += pagina.length;
-
-    if (pagina.length === 0) break;
-
-    if (linhas.length >= TETO_LEITURA) {
-      throw new Error(
-        `O periodo selecionado tem mais de ${TETO_LEITURA.toLocaleString('pt-BR')} atendimentos. ` +
-          'Escolha um intervalo menor ou filtre por loja.'
-      );
+  const linhas = await lerPaginado<unknown>(
+    (de, ate) => montarConsulta().range(de, ate),
+    {
+      oQue: 'os agendamentos',
+      teto: TETO_LEITURA,
+      mensagemDoTeto: (teto) =>
+        `O periodo selecionado tem mais de ${teto.toLocaleString('pt-BR')} atendimentos. ` +
+        'Escolha um intervalo menor ou filtre por loja.',
     }
-  }
+  );
 
   return linhas as AgendamentoComRelacoes[];
 }

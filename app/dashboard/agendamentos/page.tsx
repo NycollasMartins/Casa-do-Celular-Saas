@@ -10,6 +10,7 @@ import {
   buscarAgendamentos,
   buscarLojasDoUsuario,
   emLotes,
+  lerPaginado,
 } from '@/lib/supabase/queries';
 import { lerFiltros, type ParametrosBusca } from '@/lib/filtros';
 import { createClient } from '@/lib/supabase/server';
@@ -56,15 +57,31 @@ export default async function AgendamentosPage({ searchParams }: { searchParams:
     // Em lotes ate o fim, nao so o primeiro. Cortar em 200 fazia o sininho
     // sumir do 201o em diante — o lembrete tinha saido e a tela dizia que
     // nao.
-    const linhas = await emLotes(comVisita, async (lote) => {
-      const { data } = await supabase
-        .from('notificacoes')
-        .select('agendamento_id, status, canal, detalhe')
-        .eq('tipo', 'vespera')
-        .in('agendamento_id', lote)
-        .order('criada_em', { ascending: false });
-      return data ?? [];
-    });
+    // DUAS paginacoes, e as duas sao necessarias.
+    //
+    // `emLotes` divide os IDs para a URL nao estourar. Dentro de cada lote,
+    // `lerPaginado` existe porque notificacoes tem VARIAS linhas por
+    // agendamento: o indice unico e parcial, so cobre `status = 'enviada'`,
+    // e falhas precisam poder se repetir para uma queda do provedor nao
+    // impedir a reentrega para sempre.
+    //
+    // Duzentos agendamentos com seis tentativas cada passam do teto de linhas
+    // do servidor. Como a ordem e decrescente, o corte levaria as mais antigas
+    // — e agendamento inteiro ficaria sem sininho. Exatamente o defeito que o
+    // comentario acima diz ter corrigido, voltando por outra porta.
+    const linhas = await emLotes(comVisita, (lote) =>
+      lerPaginado<{ agendamento_id: string; status: string; canal: string; detalhe: string | null }>(
+        (de, ate) =>
+          supabase
+            .from('notificacoes')
+            .select('agendamento_id, status, canal, detalhe')
+            .eq('tipo', 'vespera')
+            .in('agendamento_id', lote)
+            .order('criada_em', { ascending: false })
+            .range(de, ate),
+        { oQue: 'os lembretes' }
+      )
+    );
 
     // A consulta vem da mais recente para a mais antiga e a tabela permite
     // varias falhas por agendamento; a primeira ocorrencia de cada id e a
@@ -85,13 +102,28 @@ export default async function AgendamentosPage({ searchParams }: { searchParams:
     // Mesmo motivo do bloco acima: cortar em 200 mostrava a carteira cinza —
     // "registrar venda" — em atendimentos que ja tinham venda, e o clique
     // devolvia "ja tem venda registrada" sem o usuario entender por que.
-    const linhas = await emLotes(comparecidos, async (lote) => {
-      const { data } = await supabase
-        .from('vendas')
-        .select('id, agendamento_id, valor, descricao, data_venda')
-        .in('agendamento_id', lote);
-      return data ?? [];
-    });
+    // Aqui uma venda por agendamento e garantido por trigger, entao o lote de
+    // 200 nao alcanca o teto do servidor. Mesmo assim passa por `lerPaginado`:
+    // depender desse raciocinio e o que faz a proxima consulta parecida nascer
+    // sem protecao. E o erro deixa de ser engolido — mostrar "sem venda" por
+    // falha de consulta e afirmar algo falso na tela.
+    const linhas = await emLotes(comparecidos, (lote) =>
+      lerPaginado<{
+        id: string;
+        agendamento_id: string;
+        valor: number;
+        descricao: string | null;
+        data_venda: string;
+      }>(
+        (de, ate) =>
+          supabase
+            .from('vendas')
+            .select('id, agendamento_id, valor, descricao, data_venda')
+            .in('agendamento_id', lote)
+            .range(de, ate),
+        { oQue: 'as vendas' }
+      )
+    );
 
     for (const venda of linhas) {
       vendas[venda.agendamento_id] = {
