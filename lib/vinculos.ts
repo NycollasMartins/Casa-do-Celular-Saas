@@ -143,3 +143,42 @@ export function tabelaDoVinculo(papel: PapelEditado | 'super_admin'): 'agendador
   if (papel === 'diretor' || papel === 'franqueado') return 'participacoes_societarias';
   return null;
 }
+
+/* --------------------- Deteccao de vinculo duplicado -------------------- */
+
+/**
+ * Agrupa vinculos vigentes por pessoa.
+ *
+ * Uma pessoa deveria ter no maximo um. Mais de um aparece quando
+ * `atualizarUsuario` abre o novo e falha ao encerrar o antigo — ela abre antes
+ * de encerrar de proposito, porque ficar com dois e menos ruim que ficar sem
+ * nenhum. O efeito, porem, nao e cosmetico: a pessoa passa a enxergar os dados
+ * de todas as lojas em que tem vinculo aberto.
+ */
+export function agruparVinculosPorUsuario(
+  itens: Array<{ usuario_id: string; loja_id: string }>
+): Map<string, string[]> {
+  const porUsuario = new Map<string, string[]>();
+
+  for (const item of itens) {
+    porUsuario.set(item.usuario_id, [...(porUsuario.get(item.usuario_id) ?? []), item.loja_id]);
+  }
+
+  return porUsuario;
+}
+
+/**
+ * Descreve quem tem mais de um vinculo aberto, com os nomes das lojas.
+ *
+ * Devolve texto pronto porque o unico consumidor e um aviso de tela, e manter
+ * a formatacao aqui deixa o caso testavel sem renderizar a pagina.
+ */
+export function descreverVinculosDuplicados(
+  pessoas: Array<{ id: string; nome: string }>,
+  porUsuario: Map<string, string[]>,
+  nomeDaLoja: (lojaId: string) => string
+): string[] {
+  return pessoas
+    .filter((pessoa) => (porUsuario.get(pessoa.id)?.length ?? 0) > 1)
+    .map((pessoa) => `${pessoa.nome} (${(porUsuario.get(pessoa.id) ?? []).map(nomeDaLoja).join(', ')})`);
+}

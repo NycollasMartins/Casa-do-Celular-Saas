@@ -9,6 +9,7 @@ import { buscarLojasDoUsuario } from '@/lib/supabase/queries';
 import { ROLE_LABEL } from '@/lib/utils';
 import type { AgendadorLoja, ParticipacaoSocietaria, Usuario } from '@/lib/types/database';
 import { LinhaVazia } from '@/components/ui/linha-vazia';
+import { agruparVinculosPorUsuario, descreverVinculosDuplicados } from '@/lib/vinculos';
 
 export const metadata = { title: 'Equipe · Casa do Celular' };
 
@@ -35,13 +36,37 @@ export default async function UsuariosPage() {
 
   const usuarios = (data ?? []) as Usuario[];
 
+  // Um vinculo por pessoa e a regra. Mais de um acontece quando
+  // `atualizarUsuario` abre o novo e falha ao encerrar o antigo — ela abre
+  // antes de encerrar de proposito, porque ficar com dois vinculos e menos
+  // ruim que ficar sem nenhum.
+  //
+  // So que o efeito NAO e cosmetico: a pessoa passa a enxergar duas lojas. E
+  // ate aqui a tela guardava so o primeiro vinculo e descartava o resto
+  // calado — `atualizarUsuario` afirma que o estado fica "visivel na tela", e
+  // nao ficava.
+  //
+  // Lotacao e participacao aparecem separadas porque o conserto e diferente:
+  // para lotacao, editar e salvar resolve (planejarVinculos encerra as
+  // paralelas); para participacao, planejarVinculos RECUSA de proposito, por
+  // nao dar para adivinhar qual das sociedades o gestor quis mover.
+  const lotacoes = agruparVinculosPorUsuario(
+    (vinculos ?? []) as Pick<AgendadorLoja, 'usuario_id' | 'loja_id'>[]
+  );
+  const sociedades = agruparVinculosPorUsuario(
+    (participacoes ?? []) as Pick<ParticipacaoSocietaria, 'usuario_id' | 'loja_id'>[]
+  );
+
   const lojaPorUsuario = new Map<string, string>();
-  for (const item of [
-    ...((vinculos ?? []) as Pick<AgendadorLoja, 'usuario_id' | 'loja_id'>[]),
-    ...((participacoes ?? []) as Pick<ParticipacaoSocietaria, 'usuario_id' | 'loja_id'>[]),
-  ]) {
-    if (!lojaPorUsuario.has(item.usuario_id)) lojaPorUsuario.set(item.usuario_id, item.loja_id);
+  for (const [usuarioId, lojasDoUsuario] of [...lotacoes, ...sociedades]) {
+    if (!lojaPorUsuario.has(usuarioId)) lojaPorUsuario.set(usuarioId, lojasDoUsuario[0]);
   }
+
+  const nomePorLoja = new Map(lojas.map((loja) => [loja.id, loja.nome]));
+  const nomeDaLoja = (lojaId: string) => nomePorLoja.get(lojaId) ?? 'Loja';
+
+  const lotacaoDuplicada = descreverVinculosDuplicados(usuarios, lotacoes, nomeDaLoja);
+  const sociedadeDuplicada = descreverVinculosDuplicados(usuarios, sociedades, nomeDaLoja);
 
   const ativos = usuarios.filter((usuario) => usuario.status === 'ativo').length;
 
@@ -57,6 +82,24 @@ export default async function UsuariosPage() {
         </div>
         <UsuarioDialog lojas={lojas} />
       </div>
+
+      {lotacaoDuplicada.length > 0 ? (
+        <div className="rounded-lg border border-warning/40 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <strong className="font-medium">Atencao:</strong> lotacao aberta em mais de uma loja ao
+          mesmo tempo — quem esta assim enxerga os dados de todas elas:{' '}
+          {lotacaoDuplicada.join('; ')}. Abrir a edicao da pessoa e salvar encerra as paralelas e
+          mantem so a loja escolhida.
+        </div>
+      ) : null}
+
+      {sociedadeDuplicada.length > 0 ? (
+        <div className="rounded-lg border border-warning/40 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <strong className="font-medium">Atencao:</strong> participacao societaria ativa em mais de
+          uma loja: {sociedadeDuplicada.join('; ')}. Isso pode ser legitimo. Se nao for, resolva em{' '}
+          <strong className="font-medium">Societario</strong> — a edicao aqui recusa mexer nisso, por
+          nao ter como adivinhar qual sociedade encerrar.
+        </div>
+      ) : null}
 
       <Card>
         <CardContent className="px-0 pt-0">

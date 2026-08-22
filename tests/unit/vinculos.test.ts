@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { planejarVinculos, selecionarParaReabrir, tabelaDoVinculo } from '@/lib/vinculos';
+import {
+  agruparVinculosPorUsuario,
+  descreverVinculosDuplicados,
+  planejarVinculos,
+  selecionarParaReabrir,
+  tabelaDoVinculo,
+} from '@/lib/vinculos';
 
 const LOJA_A = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
 const LOJA_B = 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb';
@@ -272,5 +278,110 @@ describe('tabelaDoVinculo', () => {
 
   it('super admin nao tem vinculo de loja', () => {
     expect(tabelaDoVinculo('super_admin')).toBeNull();
+  });
+});
+
+/**
+ * Estes casos existem porque a tela de Equipe agora INSTRUI o gestor: quando
+ * alguem aparece com lotacao em duas lojas, o aviso diz que abrir a edicao e
+ * salvar resolve. Instrucao na tela precisa ser verdade — e para participacao
+ * societaria ela NAO e, porque o planejamento recusa de proposito.
+ *
+ * Todos os casos anteriores tinham zero ou UM vinculo aberto. O estado de mais
+ * de um so aparece depois de `atualizarUsuario` abrir o novo e falhar ao
+ * encerrar o antigo, que e exatamente quando alguem precisa consertar.
+ */
+describe('mais de um vinculo aberto (estado a consertar)', () => {
+  it('agendador com tres lotacoes: mantem a escolhida e encerra as outras duas', () => {
+    const plano = planejarVinculos({
+      papel: 'agendador',
+      lojaEscolhida: LOJA_B,
+      agendadorAtivos: [vinculo('v1', LOJA_A), vinculo('v2', LOJA_B), vinculo('v3', LOJA_C)],
+      participacaoAtivas: [],
+    });
+
+    expect(plano.encerrarAgendador.sort()).toEqual(['v1', 'v3']);
+    // Ja esta na loja escolhida: nada a abrir, so a limpeza das paralelas.
+    expect(plano.abrirAgendador).toBeUndefined();
+    expect(plano.recusa).toBeUndefined();
+  });
+
+  it('agendador com duas lotacoes movido para uma terceira loja: encerra as duas', () => {
+    const plano = planejarVinculos({
+      papel: 'agendador',
+      lojaEscolhida: LOJA_C,
+      agendadorAtivos: [vinculo('v1', LOJA_A), vinculo('v2', LOJA_B)],
+      participacaoAtivas: [],
+    });
+
+    expect(plano.encerrarAgendador.sort()).toEqual(['v1', 'v2']);
+    expect(plano.abrirAgendador).toBe(LOJA_C);
+  });
+
+  it('gestor com duas participacoes: RECUSA em vez de adivinhar', () => {
+    const plano = planejarVinculos({
+      papel: 'franqueado',
+      lojaEscolhida: LOJA_C,
+      agendadorAtivos: [],
+      participacaoAtivas: [vinculo('p1', LOJA_A), vinculo('p2', LOJA_B)],
+    });
+
+    expect(plano.recusa).toBeTruthy();
+    // Recusar precisa ser recusar por inteiro: um plano parcial encerraria
+    // vinculo sem abrir o substituto.
+    expect(plano.encerrarParticipacao).toEqual([]);
+    expect(plano.encerrarAgendador).toEqual([]);
+    expect(plano.abrirParticipacao).toBeUndefined();
+  });
+});
+
+describe('deteccao de vinculo duplicado', () => {
+  const ANA = { id: 'u1', nome: 'Ana' };
+  const BRUNO = { id: 'u2', nome: 'Bruno' };
+  const nomeDaLoja = (id: string) => ({ [LOJA_A]: 'Centro', [LOJA_B]: 'Norte', [LOJA_C]: 'Sul' })[id] ?? 'Loja';
+
+  it('nao acusa quem tem um vinculo so', () => {
+    const grupos = agruparVinculosPorUsuario([{ usuario_id: 'u1', loja_id: LOJA_A }]);
+
+    expect(descreverVinculosDuplicados([ANA], grupos, nomeDaLoja)).toEqual([]);
+  });
+
+  it('nao acusa quem nao tem vinculo nenhum', () => {
+    expect(descreverVinculosDuplicados([ANA], new Map(), nomeDaLoja)).toEqual([]);
+  });
+
+  it('acusa quem tem dois, nomeando as lojas', () => {
+    const grupos = agruparVinculosPorUsuario([
+      { usuario_id: 'u1', loja_id: LOJA_A },
+      { usuario_id: 'u1', loja_id: LOJA_B },
+      { usuario_id: 'u2', loja_id: LOJA_C },
+    ]);
+
+    expect(descreverVinculosDuplicados([ANA, BRUNO], grupos, nomeDaLoja)).toEqual([
+      'Ana (Centro, Norte)',
+    ]);
+  });
+
+  it('a mesma loja repetida tambem conta — sao duas linhas abertas', () => {
+    // Nao ha unique parcial em agendadores_lojas por (usuario, loja) sem
+    // data_fim, entao duas linhas abertas para a MESMA loja sao possiveis, e
+    // ignora-las esconderia o mesmo defeito por outro caminho.
+    const grupos = agruparVinculosPorUsuario([
+      { usuario_id: 'u1', loja_id: LOJA_A },
+      { usuario_id: 'u1', loja_id: LOJA_A },
+    ]);
+
+    expect(descreverVinculosDuplicados([ANA], grupos, nomeDaLoja)).toEqual(['Ana (Centro, Centro)']);
+  });
+
+  it('ignora vinculo de quem nao esta na lista de pessoas', () => {
+    // A lista de usuarios ja vem filtrada pelo RLS do tenant; vinculo de fora
+    // dela nao deve aparecer no aviso.
+    const grupos = agruparVinculosPorUsuario([
+      { usuario_id: 'u9', loja_id: LOJA_A },
+      { usuario_id: 'u9', loja_id: LOJA_B },
+    ]);
+
+    expect(descreverVinculosDuplicados([ANA, BRUNO], grupos, nomeDaLoja)).toEqual([]);
   });
 });

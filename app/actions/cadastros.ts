@@ -301,8 +301,14 @@ export async function atualizarUsuario(id: string, formData: FormData): Promise<
   }
 
   // Encerramentos por ultimo, e com o erro conferido: falhar aqui deixa a
-  // pessoa com vinculo duplicado, que e visivel na tela e corrigivel — bem
-  // melhor que ficar sem nenhum, que parece o sistema estar quebrado.
+  // pessoa com vinculo duplicado — bem melhor que ficar sem nenhum, que
+  // parece o sistema estar quebrado.
+  //
+  // Duplicado NAO e cosmetico: a pessoa passa a enxergar os dados das duas
+  // lojas. A tela de Equipe avisa quando isso acontece; ate ela avisar, o
+  // estado era invisivel, porque a pagina guardava so o primeiro vinculo e
+  // descartava o resto. Este comentario ja afirmou que era "visivel na tela"
+  // quando nao era.
   if (plano.encerrarAgendador.length > 0) {
     const { error } = await supabase
       .from('agendadores_lojas')
