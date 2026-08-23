@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diaEMes, hojeNaLoja, segundaFeiraDa, semanaAnterior } from '@/lib/semana';
+import { diaEMes, hojeNaLoja, segundaFeiraDa, semanaAnterior, ehDataIso } from '@/lib/semana';
 
 describe('segundaFeiraDa', () => {
   it('devolve a propria data quando ja e segunda', () => {
@@ -80,5 +80,53 @@ describe('diaEMes', () => {
   it('formata para exibicao', () => {
     expect(diaEMes('2026-08-10')).toBe('10/08');
     expect(diaEMes('2026-12-31')).toBe('31/12');
+  });
+});
+
+describe('ehDataIso', () => {
+  /**
+   * A validacao existia so em lib/filtros.ts, para a query string. O schema do
+   * agendamento usava `Date.parse`, que e bem mais permissivo — e o campo que
+   * ele valida e o `data_agendamento`, que alimenta todo relatorio.
+   */
+  it.each(['2026-08-25', '2026-01-01', '2026-12-31', '2024-02-29'])('aceita %s', (valor) => {
+    expect(ehDataIso(valor)).toBe(true);
+  });
+
+  it('recusa dia que nao existe no mes', () => {
+    // `Date.parse('2026-02-31')` nao falha: normaliza para 03/03. Quem confia
+    // nele manda 31 de fevereiro para o banco, que ai sim recusa — com uma
+    // mensagem de Postgres na cara de quem preencheu o formulario.
+    expect(ehDataIso('2026-02-31')).toBe(false);
+    expect(ehDataIso('2025-02-29')).toBe(false);
+    expect(ehDataIso('2026-04-31')).toBe(false);
+  });
+
+  it('recusa mes fora da faixa', () => {
+    expect(ehDataIso('2026-13-01')).toBe(false);
+    expect(ehDataIso('2026-00-10')).toBe(false);
+  });
+
+  it('recusa formato ambiguo', () => {
+    // 08/25/2026 e 25/08/2026 sao o mesmo dia para uma pessoa no Brasil e
+    // coisas diferentes para o banco, que le pelo DateStyle.
+    expect(ehDataIso('08/25/2026')).toBe(false);
+    expect(ehDataIso('25/08/2026')).toBe(false);
+    expect(ehDataIso('August 25, 2026')).toBe(false);
+  });
+
+  it('recusa carimbo de tempo, que nao e data na loja', () => {
+    // 2026-08-26T01:00:00Z e 25 de agosto as 22h em Brasilia. Aceitar isso
+    // grava o atendimento no dia seguinte e desloca todo relatorio que o
+    // conte — a mesma classe de defeito que esta base ja corrigiu seis vezes.
+    expect(ehDataIso('2026-08-26T01:00:00Z')).toBe(false);
+    expect(ehDataIso('2026-08-25T23:00:00Z')).toBe(false);
+  });
+
+  it('recusa o que nao e texto', () => {
+    expect(ehDataIso(null)).toBe(false);
+    expect(ehDataIso(undefined)).toBe(false);
+    expect(ehDataIso(20260825)).toBe(false);
+    expect(ehDataIso('')).toBe(false);
   });
 });

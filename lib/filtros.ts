@@ -1,5 +1,6 @@
 import type { AgendamentoStatus } from '@/lib/types/database';
 import type { FiltroMetricas, Periodo } from '@/lib/types/metricas';
+import { ehDataIso } from '@/lib/semana';
 
 export type ParametrosBusca = { [chave: string]: string | string[] | undefined };
 
@@ -18,13 +19,7 @@ function primeiro(valor: string | string[] | undefined): string | undefined {
  * formato e falharia no banco.
  */
 function dataValida(valor: string | undefined): string | undefined {
-  if (!valor || !/^\d{4}-\d{2}-\d{2}$/.test(valor)) return undefined;
-
-  const data = new Date(`${valor}T12:00:00Z`);
-  if (Number.isNaN(data.getTime())) return undefined;
-
-  // Rejeita 31/02 e afins: o Date normaliza para 03/03 em vez de recusar.
-  return data.toISOString().slice(0, 10) === valor ? valor : undefined;
+  return ehDataIso(valor) ? valor : undefined;
 }
 
 /** Traduz a query string do dashboard em filtros de consulta. */

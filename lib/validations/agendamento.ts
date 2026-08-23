@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { validarCpf } from '@/lib/utils';
 import { hojeNaLoja } from '@/lib/semana';
+import { ehDataIso } from '@/lib/semana';
 
 export const STATUS_AGENDAMENTO = [
   'contatado',
@@ -36,10 +37,14 @@ export const agendamentoSchema = z.object({
 
   cliente_telefone: z.string().regex(REGEX_TELEFONE, 'Use o formato (00) 00000-0000'),
 
+  // `Date.parse` aceitava 2026-02-31, 08/25/2026 e ate carimbo de tempo. O
+  // ultimo custava caro: 2026-08-26T01:00:00Z e 25 de agosto as 22h em
+  // Brasilia, e gravar o dia 26 desloca todo relatorio que conte o
+  // atendimento.
   data_agendamento: z
     .string()
     .min(1, 'Escolha a data da visita')
-    .refine((valor) => !Number.isNaN(Date.parse(valor)), 'Data invalida'),
+    .refine(ehDataIso, 'Use uma data no formato AAAA-MM-DD'),
 
   status: z.enum(STATUS_AGENDAMENTO, { errorMap: () => ({ message: 'Status invalido' }) }),
 

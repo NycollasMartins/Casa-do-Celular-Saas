@@ -64,3 +64,33 @@ export function diaEMes(iso: string): string {
   const [, mes, dia] = iso.slice(0, 10).split('-');
   return `${dia}/${mes}`;
 }
+
+/**
+ * Confere se o texto e uma data de calendario no formato ISO.
+ *
+ * POR QUE NAO BASTA `Date.parse`
+ * Ele aceita coisas que nao sao data de calendario e coisas que nao sao data
+ * nenhuma no sentido que o sistema usa:
+ *
+ *   2026-02-31             -> normaliza para 03/03 em vez de recusar
+ *   08/25/2026             -> formato ambiguo; 25/08 seria lido como mes 25
+ *   August 25, 2026        -> depende do DateStyle do banco
+ *   2026-08-26T01:00:00Z   -> carimbo de tempo, nao data
+ *
+ * O ultimo e o que mais custa aqui. `data_agendamento` e a data NA LOJA, e
+ * 2026-08-26T01:00:00Z e 25 de agosto as 22h em Brasilia: gravar o dia 26
+ * joga o atendimento para o dia seguinte e desloca todo relatorio que o
+ * conte. E a mesma classe de defeito que esta base ja corrigiu seis vezes,
+ * entrando pela porta da frente.
+ *
+ * A conferencia e o proprio round-trip: se formatar de volta nao devolver o
+ * texto original, o valor nao era a data que aparentava ser.
+ */
+export function ehDataIso(valor: unknown): valor is string {
+  if (typeof valor !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(valor)) return false;
+
+  const data = new Date(`${valor}T12:00:00Z`);
+  if (Number.isNaN(data.getTime())) return false;
+
+  return data.toISOString().slice(0, 10) === valor;
+}
