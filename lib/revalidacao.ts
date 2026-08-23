@@ -17,13 +17,24 @@ import { revalidatePath } from 'next/cache';
 /** Telas que mostram agendamento, direta ou agregadamente. */
 const TELAS_AGENDAMENTO = [
   '/dashboard',
+  '/dashboard/[lojaId]',
   '/dashboard/agendamentos',
+  '/dashboard/agendamentos/[id]',
   '/dashboard/relatorios',
   '/dashboard/metas',
+  '/admin/metricas-gerais',
 ];
 
 /** Venda muda faturamento, ticket medio e o realizado das metas. */
-const TELAS_VENDA = ['/dashboard', '/dashboard/agendamentos', '/dashboard/relatorios', '/dashboard/metas'];
+const TELAS_VENDA = [
+  '/dashboard',
+  '/dashboard/[lojaId]',
+  '/dashboard/agendamentos',
+  '/dashboard/agendamentos/[id]',
+  '/dashboard/relatorios',
+  '/dashboard/metas',
+  '/admin/metricas-gerais',
+];
 
 /** Quem e a equipe aparece na Equipe, no Societario, em Metas e nos filtros. */
 const TELAS_EQUIPE = [
@@ -36,10 +47,16 @@ const TELAS_EQUIPE = [
 /** Loja alimenta todos os seletores e recortes por loja. */
 const TELAS_LOJA = [
   '/dashboard',
+  '/dashboard/[lojaId]',
   '/dashboard/lojas',
   '/dashboard/agendamentos',
+  // O formulario de novo agendamento monta o seletor a partir das lojas.
+  '/dashboard/agendamentos/novo',
   '/dashboard/relatorios',
   '/dashboard/metas',
+  // Painel do super admin: lista da rede inteira e metricas por loja.
+  '/admin/lojas',
+  '/admin/metricas-gerais',
 ];
 
 /** Meta aparece na tela do gestor e no dashboard do proprio agendador. */
@@ -49,7 +66,12 @@ const TELAS_META = ['/dashboard', '/dashboard/metas'];
 const TELAS_FRANQUEADO = ['/admin/franqueados'];
 
 /** Anonimizacao muda o que a tela de Privacidade conta e o que a lista exibe. */
-const TELAS_PRIVACIDADE = ['/dashboard', '/dashboard/agendamentos', '/dashboard/privacidade'];
+const TELAS_PRIVACIDADE = [
+  '/dashboard',
+  '/dashboard/agendamentos',
+  '/dashboard/agendamentos/[id]',
+  '/dashboard/privacidade',
+];
 
 const GRUPOS = {
   agendamento: TELAS_AGENDAMENTO,
@@ -72,5 +94,10 @@ export const TELAS_POR_GRUPO: Record<GrupoRevalidacao, readonly string[]> = GRUP
 
 export function revalidar(...grupos: GrupoRevalidacao[]): void {
   const telas = new Set(grupos.flatMap((grupo) => GRUPOS[grupo]));
-  for (const tela of telas) revalidatePath(tela);
+
+  // O segundo argumento e obrigatorio para rota com segmento dinamico:
+  // `revalidatePath('/dashboard/[lojaId]')` sozinho nao alcanca nenhuma
+  // instancia da rota. Para caminho fixo, 'page' ja e o padrao — passar
+  // sempre custa nada e evita que a proxima rota dinamica entre sem efeito.
+  for (const tela of telas) revalidatePath(tela, 'page');
 }

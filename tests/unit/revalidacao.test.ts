@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { TELAS_POR_GRUPO, type GrupoRevalidacao } from '@/lib/revalidacao';
+import { execSync } from 'node:child_process';
 
 /**
  * `revalidatePath` com caminho inexistente NAO levanta erro: simplesmente
@@ -54,5 +55,55 @@ describe('grupos de revalidacao', () => {
   it('venda alcanca relatorios e metas', () => {
     expect(TELAS_POR_GRUPO.venda).toContain('/dashboard/relatorios');
     expect(TELAS_POR_GRUPO.venda).toContain('/dashboard/metas');
+  });
+});
+
+describe('a direcao inversa: telas que ninguem revalida', () => {
+  /**
+   * O teste acima confere que todo caminho listado existe. Faltava o oposto:
+   * que toda tela de dados esteja em ALGUM grupo.
+   *
+   * Foi assim que /admin/lojas e /admin/metricas-gerais ficaram de fora —
+   * ninguem as removeu, elas simplesmente nunca entraram. Criar uma loja
+   * invalidava a lista do franqueado e nao a da rede.
+   *
+   * Uma tela fora do mapa nao quebra: mostra dado velho, que e pior, porque
+   * parece que a gravacao nao funcionou.
+   */
+  const SEM_DADO_PARA_REVALIDAR: Record<string, string> = {
+    '/': 'so redireciona',
+    '/privacidade': 'texto estatico da politica',
+    '/auth/login': 'formulario',
+    '/auth/register': 'formulario',
+    '/auth/forgot-password': 'formulario',
+    '/auth/nova-senha': 'formulario',
+    '/admin/franqueados': 'coberta pelo grupo franqueado',
+  };
+
+  const rotas = execSync('find app -name page.tsx', { encoding: 'utf8' })
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((caminho) => {
+      const rota = caminho.replace('app/', '').replace(/\/?page\.tsx$/, '');
+      return rota === '' ? '/' : `/${rota}`;
+    });
+
+  const listadas = new Set(Object.values(TELAS_POR_GRUPO).flat());
+
+  it('encontrou as rotas', () => {
+    expect(rotas.length).toBeGreaterThan(10);
+  });
+
+  it.each(rotas)('%s esta em algum grupo, ou isenta com motivo', (rota) => {
+    const coberta = listadas.has(rota) || rota in SEM_DADO_PARA_REVALIDAR;
+
+    expect(coberta).toBe(true);
+  });
+
+  it('nao ha isencao orfa', () => {
+    const orfas = Object.keys(SEM_DADO_PARA_REVALIDAR).filter((r) => !rotas.includes(r));
+
+    expect(orfas).toEqual([]);
   });
 });
