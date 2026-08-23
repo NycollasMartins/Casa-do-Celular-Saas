@@ -30,10 +30,32 @@ export async function autenticarRequisicao(
   return { usuario };
 }
 
+/**
+ * Resposta de erro das rotas de API.
+ *
+ * A MENSAGEM INTERNA NAO SAI NA RESPOSTA
+ * Antes devolvia `excecao.message` direto. Erro vindo do PostgREST carrega
+ * nome de coluna, nome de constraint e as vezes o valor que causou a
+ * violacao — detalhe de schema entregue a qualquer pessoa autenticada,
+ * inclusive um agendador, que e o papel de menor privilegio.
+ *
+ * As paginas ja se comportavam assim: o boundary de rota mostra so o `digest`
+ * porque o Next redige a mensagem em producao. Aqui a redacao tinha sido
+ * desfeita a mao.
+ *
+ * O `codigo` mantem o chamado rastreavel: e o mesmo id do evento no Sentry, e
+ * vai para o log do servidor junto com a excecao inteira. A pessoa cita o
+ * codigo, quem investiga acha o detalhe.
+ */
 export function erroServidor(excecao: unknown) {
-  // Sem DSN configurado isto e um no-op; o comportamento da rota nao muda.
-  Sentry.captureException(excecao);
+  // Devolve id mesmo sem DSN configurado; sem DSN nada e enviado, e o log do
+  // servidor passa a ser o unico destino — mas o codigo continua batendo.
+  const codigo = Sentry.captureException(excecao);
 
-  const mensagem = excecao instanceof Error ? excecao.message : 'Erro inesperado';
-  return NextResponse.json({ erro: mensagem }, { status: 500 });
+  console.error(`[erro de rota ${codigo}]`, excecao);
+
+  return NextResponse.json(
+    { erro: 'Nao foi possivel completar a operacao.', codigo },
+    { status: 500 }
+  );
 }
