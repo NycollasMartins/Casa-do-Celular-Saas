@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ipDoCliente } from '@/lib/rede';
+import { destinoSeguro, ipDoCliente } from '@/lib/rede';
 
 /**
  * A rota aberta de saude limita por IP. Se o identificador vier de um
@@ -55,5 +55,80 @@ describe('ipDoCliente', () => {
     expect(ipDoCliente(cabecalhos({ 'x-nf-client-connection-ip': '  ', 'x-real-ip': '203.0.113.1' }))).toBe(
       '203.0.113.1'
     );
+  });
+});
+
+describe('destinoSeguro', () => {
+  /**
+   * Cada um destes ja foi confirmado saindo do site com `new URL`, que e a
+   * mesma resolucao que o navegador faz.
+   */
+  const FUGAS = [
+    ['//evil.com', 'protocolo-relativo: vira https://evil.com'],
+    ['/\\evil.com', 'o navegador normaliza a barra invertida'],
+    ['/\\/evil.com', 'variacao da mesma normalizacao'],
+    ['https://evil.com', 'URL absoluta'],
+    ['http://evil.com/x', 'absoluta sem TLS'],
+    ['//evil.com/dashboard', 'disfarcada de caminho interno'],
+    ['///evil.com', 'tres barras tambem resolvem para fora'],
+  ] as const;
+
+  it.each(FUGAS)('recusa %s (%s)', (valor) => {
+    expect(destinoSeguro(valor)).toBe('/dashboard');
+  });
+
+  it('recusa o valor ja decodificado pelo searchParams', () => {
+    // `?redirect=%2F%2Fevil.com` chega no codigo como '//evil.com': a
+    // conferencia acontece DEPOIS da decodificacao, nao antes.
+    expect(destinoSeguro(decodeURIComponent('%2F%2Fevil.com'))).toBe('/dashboard');
+  });
+
+  it.each([
+    '/dashboard',
+    '/dashboard/metas',
+    '/dashboard/agendamentos?loja=abc&periodo=30d',
+    '/dashboard/agendamentos/123',
+  ])('preserva o destino interno %s', (valor) => {
+    expect(destinoSeguro(valor)).toBe(valor);
+  });
+
+  it('cai no padrao quando nao ha parametro', () => {
+    expect(destinoSeguro(null)).toBe('/dashboard');
+    expect(destinoSeguro(undefined)).toBe('/dashboard');
+    expect(destinoSeguro('')).toBe('/dashboard');
+  });
+
+  it('aceita padrao proprio', () => {
+    expect(destinoSeguro('//evil.com', '/auth/login')).toBe('/auth/login');
+  });
+
+  it('devolve caminho relativo mesmo recebendo caminho sem barra inicial', () => {
+    // 'dashboard' resolve para '/dashboard' na base — mesma origem, entao
+    // passa, e o retorno sai normalizado com a barra.
+    expect(destinoSeguro('dashboard')).toBe('/dashboard');
+  });
+});
+
+describe('destinoSeguro concatenado a uma origem', () => {
+  const ORIGEM = 'https://casadocelular.netlify.app';
+
+  /**
+   * A rota de callback montava o destino com `${origin}${next}`. Concatenar
+   * host com texto de fora protege menos do que parece: `//evil.com` fica no
+   * dominio, mas `@evil.com` vira userinfo e `.evil.com` vira subdominio de
+   * quem atacou.
+   */
+  it.each(['@evil.com', '.evil.com', '//evil.com', 'https://evil.com', '.evil.com/roubar'])(
+    'com %s o host final continua sendo o nosso',
+    (valor) => {
+      const destino = new URL(destinoSeguro(valor), ORIGEM);
+
+      expect(destino.host).toBe('casadocelular.netlify.app');
+    }
+  );
+
+  it('sem a conferencia, @ e . escapariam — e o teste acima nao seria trivial', () => {
+    expect(new URL(`${ORIGEM}@evil.com`).host).toBe('evil.com');
+    expect(new URL(`${ORIGEM}.evil.com`).host).toBe('casadocelular.netlify.app.evil.com');
   });
 });

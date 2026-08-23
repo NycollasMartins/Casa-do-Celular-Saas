@@ -39,7 +39,12 @@ export async function middleware(request: NextRequest) {
   }
 
   const { response, user } = await atualizarSessao(request);
-  const rotaPublica = ROTAS_PUBLICAS.some((rota) => pathname.startsWith(rota));
+  // Limite de segmento, como em ROTAS_ABERTAS. Com `startsWith` cru, qualquer
+  // rota futura cujo caminho comece com um destes prefixos — `/auth/registrar-
+  // parceiro`, digamos — nasceria publica sem ninguem decidir isso.
+  const rotaPublica = ROTAS_PUBLICAS.some(
+    (rota) => pathname === rota || pathname.startsWith(`${rota}/`)
+  );
 
   if (!user && !rotaPublica && pathname !== ROTA_NOVA_SENHA) {
     // Requisicao de dados recebe 401 em JSON; so navegacao vai para o login.

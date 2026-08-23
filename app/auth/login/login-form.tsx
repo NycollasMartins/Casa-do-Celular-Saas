@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { entrar } from '@/app/actions/auth';
+import { destinoSeguro } from '@/lib/rede';
 
 /** Motivos que outras rotas repassam pela query string. */
 const ERRO_NA_URL: Record<string, string> = {
@@ -37,7 +38,9 @@ export function LoginForm() {
 
       setErro(null);
       toast.success('Bem-vindo de volta.');
-      router.push(searchParams.get('redirect') ?? '/dashboard');
+      // O `redirect` vem da URL, entao vem de fora: `?redirect=//evil.com`
+      // levaria a pessoa para outro site logo depois de ela autenticar aqui.
+      router.push(destinoSeguro(searchParams.get('redirect')));
       router.refresh();
     });
   }

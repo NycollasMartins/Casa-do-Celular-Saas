@@ -36,3 +36,45 @@ export function ipDoCliente(cabecalhos: Headers): string {
 
   return primeiro || 'desconhecido';
 }
+
+/* --------------------- Destino de redirecionamento --------------------- */
+
+/**
+ * Base descartavel so para resolver o caminho como o navegador resolveria.
+ * O host nao importa: o que interessa e se o valor CONSEGUE trocar de origem.
+ */
+const BASE_DE_TESTE = 'https://exemplo.invalid';
+
+/**
+ * Valida o `?redirect=` antes de navegar para ele.
+ *
+ * POR QUE
+ * A tela de login mandava `router.push(searchParams.get('redirect'))` sem
+ * conferir nada. Basta um link `?redirect=//evil.com` para a pessoa
+ * autenticar no dominio verdadeiro, com certificado verdadeiro, e ser jogada
+ * num site alheio logo em seguida — que e o formato classico de phishing: a
+ * parte que a vitima confere e legitima.
+ *
+ * Nao basta procurar "http" no comeco. Estas quatro formas saem do site, e
+ * duas nao parecem: `//evil.com`, `/\evil.com` (o navegador normaliza a barra
+ * invertida), `https://evil.com` e `%2F%2Fevil.com` (o searchParams decodifica
+ * antes de entregar).
+ *
+ * Por isso a conferencia usa a MESMA resolucao que o navegador faz, em vez de
+ * casar padroes a mao: se resolver para outra origem, nao serve. O retorno e
+ * so caminho, busca e ancora — qualquer host que tenha vindo junto fica pelo
+ * caminho.
+ */
+export function destinoSeguro(valor: string | null | undefined, padrao = '/dashboard'): string {
+  if (!valor) return padrao;
+
+  try {
+    const destino = new URL(valor, BASE_DE_TESTE);
+
+    if (destino.origin !== BASE_DE_TESTE) return padrao;
+
+    return `${destino.pathname}${destino.search}${destino.hash}`;
+  } catch {
+    return padrao;
+  }
+}
