@@ -2,7 +2,7 @@
 
 import { revalidar as revalidarTelas } from '@/lib/revalidacao';
 import { createClient } from '@/lib/supabase/server';
-import { buscarUsuarioAtual, podeGerenciarCadastros } from '@/lib/auth/session';
+import { usuarioComAcesso, podeGerenciarCadastros } from '@/lib/auth/session';
 import { agendamentoSchema, novoAgendamentoSchema, vendaSchema } from '@/lib/validations/agendamento';
 import { calcularMetricas, buscarLojasDoUsuario } from '@/lib/supabase/queries';
 import type { FiltroMetricas } from '@/lib/types/metricas';
@@ -44,7 +44,7 @@ function revalidar() {
  * resolver aqui evita depender do cliente para a integridade do tenant.
  */
 export async function criarAgendamento(formData: FormData): Promise<ResultadoAction> {
-  const usuario = await buscarUsuarioAtual();
+  const usuario = await usuarioComAcesso();
   if (!usuario) return { sucesso: false, mensagem: 'Sessao expirada. Entre novamente.' };
 
   const parsed = novoAgendamentoSchema.safeParse(extrair(formData));
@@ -100,7 +100,7 @@ export async function criarAgendamento(formData: FormData): Promise<ResultadoAct
 
 /** Atualiza um agendamento existente. O RLS bloqueia o que nao for do usuario. */
 export async function atualizarAgendamento(id: string, formData: FormData): Promise<ResultadoAction> {
-  const usuario = await buscarUsuarioAtual();
+  const usuario = await usuarioComAcesso();
   if (!usuario) return { sucesso: false, mensagem: 'Sessao expirada. Entre novamente.' };
 
   // Na edicao a data pode ser passada (marcar comparecimento retroativo).
@@ -141,7 +141,7 @@ export async function atualizarAgendamento(id: string, formData: FormData): Prom
 
 /** Exclui um agendamento. Agendador nao tem essa permissao (bloqueado no RLS). */
 export async function deletarAgendamento(id: string): Promise<ResultadoAction> {
-  const usuario = await buscarUsuarioAtual();
+  const usuario = await usuarioComAcesso();
   if (!usuario) return { sucesso: false, mensagem: 'Sessao expirada. Entre novamente.' };
 
   if (usuario.role === 'agendador') {
@@ -184,7 +184,7 @@ export async function listarLojasDoUsuario() {
  * controlador, nao do operador de balcao.
  */
 export async function anonimizarPorCpf(cpf: string): Promise<ResultadoAction & { total?: number }> {
-  const gestor = await buscarUsuarioAtual();
+  const gestor = await usuarioComAcesso();
   if (!gestor || !podeGerenciarCadastros(gestor.role)) {
     return { sucesso: false, mensagem: 'Apenas o franqueado atende pedidos de titular.' };
   }
@@ -230,7 +230,7 @@ export async function anonimizarPorCpf(cpf: string): Promise<ResultadoAction & {
 export async function contarRegistrosDoCpf(
   cpf: string
 ): Promise<{ total: number; anonimizados: number; erro?: string }> {
-  const gestor = await buscarUsuarioAtual();
+  const gestor = await usuarioComAcesso();
   if (!gestor || !podeGerenciarCadastros(gestor.role)) {
     return { total: 0, anonimizados: 0, erro: 'Sem permissao.' };
   }
@@ -267,7 +267,7 @@ export async function registrarVenda(
   agendamentoId: string,
   formData: FormData
 ): Promise<ResultadoAction> {
-  const usuario = await buscarUsuarioAtual();
+  const usuario = await usuarioComAcesso();
   if (!usuario) return { sucesso: false, mensagem: 'Sessao expirada.' };
 
   const parsed = vendaSchema.safeParse({
@@ -309,7 +309,7 @@ export async function registrarVenda(
 }
 
 export async function atualizarVenda(id: string, formData: FormData): Promise<ResultadoAction> {
-  const usuario = await buscarUsuarioAtual();
+  const usuario = await usuarioComAcesso();
   if (!usuario) return { sucesso: false, mensagem: 'Sessao expirada.' };
 
   const parsed = vendaSchema.safeParse({
@@ -340,7 +340,7 @@ export async function atualizarVenda(id: string, formData: FormData): Promise<Re
 
 /** Apagar venda e gestor: e historico financeiro, nao rascunho. */
 export async function removerVenda(id: string): Promise<ResultadoAction> {
-  const usuario = await buscarUsuarioAtual();
+  const usuario = await usuarioComAcesso();
   if (!usuario) return { sucesso: false, mensagem: 'Sessao expirada.' };
   if (usuario.role === 'agendador') {
     return { sucesso: false, mensagem: 'Apenas gestores removem venda registrada.' };

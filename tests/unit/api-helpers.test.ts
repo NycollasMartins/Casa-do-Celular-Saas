@@ -17,7 +17,7 @@ vi.mock('@sentry/nextjs', () => ({
 // api-helpers importa a sessao, que chama o `cache` do React no carregamento
 // do modulo — fora de uma renderizacao ele nao existe. O alvo do teste e a
 // formatacao da resposta, nao a autenticacao.
-vi.mock('@/lib/auth/session', () => ({ buscarUsuarioAtual: async () => null }));
+vi.mock('@/lib/auth/session', () => ({ usuarioComAcesso: async () => null }));
 vi.mock('@/lib/rate-limit', () => ({ verificarRateLimit: async () => ({ permitido: true }) }));
 
 const { erroServidor } = await import('@/lib/api-helpers');

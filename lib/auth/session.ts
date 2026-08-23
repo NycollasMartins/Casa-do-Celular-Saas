@@ -23,6 +23,34 @@ export const buscarUsuarioAtual = cache(async (): Promise<Usuario | null> => {
 });
 
 /**
+ * Usuario com acesso VIGENTE. E o que Server Action deve usar.
+ *
+ * POR QUE NAO BASTA `buscarUsuarioAtual`
+ * Aquela devolve a linha de quem esta desligado — e devolve de proposito: o
+ * RLS libera todo mundo a ler a PROPRIA linha, para a aplicacao conseguir
+ * dizer "seu acesso foi encerrado" em vez de mostrar tela vazia.
+ *
+ * Nas acoes que gravam com o cliente normal isso nao fazia diferenca: o RLS
+ * barra o desligado de qualquer jeito. Mas `criarUsuario` grava com SERVICE
+ * ROLE — precisa, porque a Admin API cria a conta em auth.users — e service
+ * role ignora RLS.
+ *
+ * O resultado era que um franqueado desligado, enquanto o access token dele
+ * nao expirasse, ainda conseguia criar um usuario novo no proprio tenant,
+ * com o papel que quisesse, e voltar a entrar por essa conta. O desligamento
+ * virava temporario. `definirStatusUsuario` escapava por escrever com o
+ * cliente normal, onde o RLS barra a reativacao.
+ *
+ * A revogacao de sessao (`admin.signOut` global) nao fecha essa janela: ela
+ * invalida o refresh token, e o access token ja emitido vale ate expirar.
+ */
+export async function usuarioComAcesso(): Promise<Usuario | null> {
+  const usuario = await buscarUsuarioAtual();
+  if (!usuario || usuario.status !== 'ativo') return null;
+  return usuario;
+}
+
+/**
  * Usa em paginas protegidas: redireciona para o login se nao houver sessao.
  *
  * Usuario desligado tem a sessao encerrada aqui. O RLS ja devolveria tudo

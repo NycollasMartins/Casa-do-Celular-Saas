@@ -3,7 +3,7 @@
 import { revalidar as revalidarTelas } from '@/lib/revalidacao';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { buscarUsuarioAtual, podeGerenciarCadastros } from '@/lib/auth/session';
+import { usuarioComAcesso, podeGerenciarCadastros } from '@/lib/auth/session';
 import {
   franqueadoSchema,
   lojaSchema,
@@ -37,7 +37,7 @@ function objeto(formData: FormData): Record<string, string> {
 /* ------------------------------- Lojas ------------------------------- */
 
 export async function salvarLoja(formData: FormData, id?: string): Promise<ResultadoAction> {
-  const usuario = await buscarUsuarioAtual();
+  const usuario = await usuarioComAcesso();
   if (!usuario || !podeGerenciarCadastros(usuario.role)) {
     return { sucesso: false, mensagem: 'Voce nao tem permissao para gerenciar lojas.' };
   }
@@ -84,7 +84,7 @@ export async function salvarLoja(formData: FormData, id?: string): Promise<Resul
  * auth e removido para nao deixar conta orfa.
  */
 export async function criarUsuario(formData: FormData): Promise<ResultadoAction> {
-  const gestor = await buscarUsuarioAtual();
+  const gestor = await usuarioComAcesso();
   if (!gestor || !podeGerenciarCadastros(gestor.role)) {
     return { sucesso: false, mensagem: 'Voce nao tem permissao para criar usuarios.' };
   }
@@ -201,7 +201,7 @@ export async function criarUsuario(formData: FormData): Promise<ResultadoAction>
  * novo. E o que preserva a leitura historica de quem respondia por qual loja.
  */
 export async function atualizarUsuario(id: string, formData: FormData): Promise<ResultadoAction> {
-  const gestor = await buscarUsuarioAtual();
+  const gestor = await usuarioComAcesso();
   if (!gestor || !podeGerenciarCadastros(gestor.role)) {
     return { sucesso: false, mensagem: 'Voce nao tem permissao para editar usuarios.' };
   }
@@ -343,7 +343,7 @@ export async function definirStatusUsuario(
   id: string,
   status: 'ativo' | 'inativo'
 ): Promise<ResultadoAction> {
-  const gestor = await buscarUsuarioAtual();
+  const gestor = await usuarioComAcesso();
   if (!gestor || !podeGerenciarCadastros(gestor.role)) {
     return { sucesso: false, mensagem: 'Voce nao tem permissao para alterar acessos.' };
   }
@@ -431,7 +431,7 @@ export async function definirStatusUsuario(
 /* ---------------------------- Franqueados ---------------------------- */
 
 export async function salvarFranqueado(formData: FormData, id?: string): Promise<ResultadoAction> {
-  const usuario = await buscarUsuarioAtual();
+  const usuario = await usuarioComAcesso();
   if (!usuario || usuario.role !== 'super_admin') {
     return { sucesso: false, mensagem: 'Apenas o super admin gerencia franqueados.' };
   }
@@ -473,7 +473,7 @@ export async function salvarFranqueado(formData: FormData, id?: string): Promise
  * respondia por qual loja em cada periodo.
  */
 export async function encerrarParticipacao(id: string, dataFim?: string): Promise<ResultadoAction> {
-  const gestor = await buscarUsuarioAtual();
+  const gestor = await usuarioComAcesso();
   if (!gestor || !podeGerenciarCadastros(gestor.role)) {
     return { sucesso: false, mensagem: 'Voce nao tem permissao para gerenciar participacoes.' };
   }
@@ -517,7 +517,7 @@ export async function encerrarParticipacao(id: string, dataFim?: string): Promis
  * depois de encerrada — o que torna a transferencia de volta possivel.
  */
 export async function criarParticipacao(formData: FormData): Promise<ResultadoAction> {
-  const gestor = await buscarUsuarioAtual();
+  const gestor = await usuarioComAcesso();
   if (!gestor || !podeGerenciarCadastros(gestor.role)) {
     return { sucesso: false, mensagem: 'Voce nao tem permissao para gerenciar participacoes.' };
   }
@@ -566,7 +566,7 @@ export async function transferirParticipacao(
   id: string,
   formData: FormData
 ): Promise<ResultadoAction> {
-  const gestor = await buscarUsuarioAtual();
+  const gestor = await usuarioComAcesso();
   if (!gestor || !podeGerenciarCadastros(gestor.role)) {
     return { sucesso: false, mensagem: 'Voce nao tem permissao para gerenciar participacoes.' };
   }
@@ -646,7 +646,7 @@ export async function transferirParticipacao(
  * passo extra.
  */
 export async function salvarMeta(formData: FormData): Promise<ResultadoAction> {
-  const gestor = await buscarUsuarioAtual();
+  const gestor = await usuarioComAcesso();
   if (!gestor || !podeGerenciarCadastros(gestor.role)) {
     return { sucesso: false, mensagem: 'Voce nao tem permissao para definir metas.' };
   }
@@ -678,7 +678,7 @@ export async function salvarMeta(formData: FormData): Promise<ResultadoAction> {
 }
 
 export async function removerMeta(id: string): Promise<ResultadoAction> {
-  const gestor = await buscarUsuarioAtual();
+  const gestor = await usuarioComAcesso();
   if (!gestor || !podeGerenciarCadastros(gestor.role)) {
     return { sucesso: false, mensagem: 'Voce nao tem permissao para remover metas.' };
   }

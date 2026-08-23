@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
-import { buscarUsuarioAtual } from '@/lib/auth/session';
+import { usuarioComAcesso } from '@/lib/auth/session';
 import { verificarRateLimit } from '@/lib/rate-limit';
 import type { Usuario } from '@/lib/types/database';
 
@@ -11,7 +11,10 @@ import type { Usuario } from '@/lib/types/database';
 export async function autenticarRequisicao(
   rota: string
 ): Promise<{ usuario: Usuario; erro?: never } | { usuario?: never; erro: NextResponse }> {
-  const usuario = await buscarUsuarioAtual();
+  // Desligado nao e "autenticado": as rotas leem com o cliente normal e o RLS
+  // ja devolveria vazio, mas responder 401 diz a verdade em vez de fingir uma
+  // consulta sem resultado.
+  const usuario = await usuarioComAcesso();
 
   if (!usuario) {
     return { erro: NextResponse.json({ erro: 'Nao autenticado' }, { status: 401 }) };
