@@ -89,7 +89,9 @@ export const vendaSchema = z.object({
     .positive('O valor precisa ser maior que zero')
     .max(9_999_999_999.99, 'Valor acima do limite'),
   descricao: z.string().trim().max(300, 'Maximo de 300 caracteres').optional().or(z.literal('')),
-  data_venda: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data invalida'),
+  // O formato sozinho deixava passar 2026-02-31, que so falha no banco — e
+  // a mensagem que chega a tela e do Postgres.
+  data_venda: z.string().refine(ehDataIso, 'Use uma data no formato AAAA-MM-DD'),
 });
 
 export type VendaInput = z.infer<typeof vendaSchema>;

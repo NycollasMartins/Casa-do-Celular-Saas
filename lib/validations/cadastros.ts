@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ehDataIso } from '@/lib/semana';
 
 export const lojaSchema = z.object({
   nome: z.string().trim().min(3, 'Informe o nome da loja'),
@@ -43,14 +44,28 @@ export const participacaoSchema = z.object({
     .min(0.01, 'Informe um percentual maior que zero')
     .max(100, 'O percentual nao pode passar de 100'),
   cargo: z.enum(['franqueado', 'diretor']),
-  data_inicio: z.string().optional().or(z.literal('')),
+  // Sem conferencia nenhuma antes: a string ia inteira para o banco. Alem do
+  // erro cru de Postgres, um carimbo de tempo seria truncado em UTC e a
+  // sociedade comecaria no dia errado.
+  data_inicio: z
+    .string()
+    .optional()
+    .or(z.literal(''))
+    .refine((valor) => !valor || ehDataIso(valor), 'Use uma data no formato AAAA-MM-DD'),
 });
 
 /** Transferencia: a origem vem pelo id, aqui vai so o destino. */
 export const transferenciaSchema = z.object({
   loja_id: z.string().uuid('Escolha a loja de destino'),
   percentual_participacao: z.coerce.number().min(0.01).max(100).optional(),
-  data_inicio: z.string().optional().or(z.literal('')),
+  // Sem conferencia nenhuma antes: a string ia inteira para o banco. Alem do
+  // erro cru de Postgres, um carimbo de tempo seria truncado em UTC e a
+  // sociedade comecaria no dia errado.
+  data_inicio: z
+    .string()
+    .optional()
+    .or(z.literal(''))
+    .refine((valor) => !valor || ehDataIso(valor), 'Use uma data no formato AAAA-MM-DD'),
 });
 
 /**
@@ -66,7 +81,11 @@ const alvoOpcional = z
 export const metaSchema = z
   .object({
     usuario_id: z.string().uuid('Escolha o agendador'),
-    competencia: z.string().regex(/^\d{4}-\d{2}-01$/, 'Competencia invalida'),
+    // A regex sozinha aceitava 2026-13-01: mes 13 casa com \d{2}.
+    competencia: z
+      .string()
+      .regex(/^\d{4}-\d{2}-01$/, 'Competencia invalida')
+      .refine(ehDataIso, 'Competencia invalida'),
     meta_agendamentos: alvoOpcional,
     meta_taxa_conversao: alvoOpcional,
     meta_vendas: alvoOpcional,

@@ -14,7 +14,7 @@ import {
   usuarioSchema,
 } from '@/lib/validations/cadastros';
 import { planejarVinculos, selecionarParaReabrir, tabelaDoVinculo } from '@/lib/vinculos';
-import { hojeNaLoja } from '@/lib/semana';
+import { ehDataIso, hojeNaLoja } from '@/lib/semana';
 import type { ResultadoAction } from './agendamentos';
 
 /**
@@ -487,6 +487,18 @@ export async function encerrarParticipacao(id: string, dataFim?: string): Promis
 
   if (erroLeitura || !atual) return { sucesso: false, mensagem: 'Participacao nao encontrada.' };
   if (atual.data_fim) return { sucesso: false, mensagem: 'Esta participacao ja esta encerrada.' };
+
+  // `dataFim` chega como parametro solto de um componente cliente, sem passar
+  // por schema nenhum. Alem do erro cru de Postgres, a comparacao logo abaixo
+  // e de STRING: ela so ordena corretamente em ISO. Com '08/25/2026', '0' < '2'
+  // e verdadeiro e a acao recusaria uma data legitima.
+  if (dataFim && !ehDataIso(dataFim)) {
+    return {
+      sucesso: false,
+      mensagem: 'Data de encerramento invalida.',
+      erros: { data_fim: ['Use o formato AAAA-MM-DD'] },
+    };
+  }
 
   const fim = dataFim || hoje();
 
