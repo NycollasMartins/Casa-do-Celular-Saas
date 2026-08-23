@@ -489,6 +489,137 @@ begin
   reset role;
 end $$;
 
+-- ============ primeiro dia: tenant sem nada dentro ============
+--
+-- POR QUE ISTO FALTAVA
+-- As asserçoes cobrem bem o que e PROIBIDO — escalada de papel, loja alheia,
+-- tenant cruzado, agendamento em nome de colega. O caminho que a pessoa
+-- percorre no primeiro dia nunca foi exercitado: franqueado sem loja nenhuma
+-- cadastra a primeira, depois a equipe, depois o primeiro atendimento.
+--
+-- Uma policy escrita apertada demais barra esse caminho e ninguem descobre
+-- ate alguem tentar usar o sistema pela primeira vez — quando nao ha dado
+-- nenhum na tela para sugerir o que deu errado.
+--
+-- Roda num franqueado NOVO, criado aqui, para nao mexer nas contagens de que
+-- as outras asserçoes dependem.
+do $$
+declare
+  v_franq uuid;
+  v_dono  uuid;
+  v_loja  uuid;
+  v_agend uuid;
+  v_erro  text;
+begin
+  -- Montagem feita como dono do banco: e o equivalente ao que o painel do
+  -- Supabase e o script de seed fazem. O que esta sob teste comeca depois.
+  insert into public.franqueados (nome, cnpj) values ('Tenant Novo', '99999999999999')
+  returning id into v_franq;
+
+  insert into auth.users (email) values ('primeiro.dia@tenantnovo.com.br') returning id into v_dono;
+  insert into public.usuarios (id, email, nome, role, franqueado_id)
+  values (v_dono, 'primeiro.dia@tenantnovo.com.br', 'Dono Novo', 'franqueado', v_franq);
+
+  perform set_config('request.jwt.claim.sub', v_dono::text, false);
+  set role authenticated;
+
+  perform pg_temp.checar('tenant novo comeca sem loja', '0',
+    (select count(*)::text from public.lojas));
+
+  -- 1. A primeira loja.
+  --
+  -- SEM `returning`, e a razao merece registro. Sob RLS, o RETURNING de um
+  -- INSERT passa TAMBEM pela policy de SELECT, e `lojas_permitidas()` e
+  -- `stable`: dentro da mesma instrucao ela nao enxerga a linha que acabou de
+  -- ser inserida. O insert e aceito e o comando falha assim mesmo, com
+  -- "new row violates row-level security policy" — mensagem que aponta para
+  -- permissao quando o problema e visibilidade.
+  --
+  -- A aplicacao escapa por nao encadear `.select()` depois de `.insert()`. No
+  -- dia em que alguem fizer isso para pegar o id da loja nova, cadastrar loja
+  -- quebra em producao. A assercao logo abaixo existe para esse dia.
+  begin
+    insert into public.lojas (franqueado_id, nome, codigo_loja, estado, cidade)
+    values (v_franq, 'Primeira Loja', 'NOVA-001', 'DF', 'Brasilia');
+    v_erro := 'criou';
+  exception when others then v_erro := 'barrou: ' || sqlerrm;
+  end;
+  perform pg_temp.checar('franqueado cria a PRIMEIRA loja', 'criou', v_erro);
+
+  -- Instrucao nova, snapshot novo: agora a linha aparece.
+  select id into v_loja from public.lojas where codigo_loja = 'NOVA-001';
+
+  -- A armadilha, registrada como comportamento conhecido em vez de surpresa.
+  begin
+    insert into public.lojas (franqueado_id, nome, codigo_loja, estado, cidade)
+    values (v_franq, 'Segunda', 'NOVA-002', 'DF', 'Brasilia')
+    returning id into v_erro;
+    v_erro := 'passou';
+  exception when others then v_erro := 'barrou';
+  end;
+  perform pg_temp.checar('INSERT com RETURNING e barrado pelo RLS', 'barrou', v_erro);
+
+  perform pg_temp.checar('e passa a enxerga-la', '1',
+    (select count(*)::text from public.lojas));
+
+  reset role;
+
+  -- 2. A equipe. A aplicacao cria usuario com service role, porque a Admin API
+  -- precisa disso para gravar em auth.users — entao esta parte nao passa pelo
+  -- RLS. O vinculo passa, e e ele que decide o que a pessoa enxerga.
+  insert into auth.users (email) values ('agendador@tenantnovo.com.br') returning id into v_agend;
+  insert into public.usuarios (id, email, nome, role, franqueado_id)
+  values (v_agend, 'agendador@tenantnovo.com.br', 'Agendador Novo', 'agendador', v_franq);
+
+  perform set_config('request.jwt.claim.sub', v_dono::text, false);
+  set role authenticated;
+
+  begin
+    insert into public.agendadores_lojas (usuario_id, loja_id, data_inicio)
+    values (v_agend, v_loja, current_date);
+    v_erro := 'criou';
+  exception when others then v_erro := 'barrou: ' || sqlerrm;
+  end;
+  perform pg_temp.checar('franqueado lota o agendador na loja nova', 'criou', v_erro);
+
+  reset role;
+
+  -- 3. O primeiro atendimento, lancado pelo proprio agendador.
+  perform set_config('request.jwt.claim.sub', v_agend::text, false);
+  set role authenticated;
+
+  perform pg_temp.checar('agendador ja enxerga a loja em que foi lotado', '1',
+    (select count(*)::text from public.lojas));
+
+  begin
+    insert into public.agendamentos (franqueado_id, loja_id, agendador_id, cliente_nome,
+                                     cliente_cpf, cliente_telefone, data_agendamento, status)
+    values (v_franq, v_loja, v_agend, 'Primeiro Cliente', '52998224725', '61999999999',
+            current_date, 'agendado');
+    v_erro := 'criou';
+  exception when others then v_erro := 'barrou: ' || sqlerrm;
+  end;
+  perform pg_temp.checar('agendador lanca o PRIMEIRO atendimento', 'criou', v_erro);
+
+  reset role;
+
+  -- 4. O tenant novo continua isolado: nada dele aparece para o outro.
+  perform set_config('request.jwt.claim.sub',
+    (select id::text from auth.users where email = 'dono@franqueado.com.br'), false);
+  set role authenticated;
+  perform pg_temp.checar('o tenant antigo nao enxerga a loja nova', '9',
+    (select count(*)::text from public.lojas));
+  reset role;
+
+  -- Limpeza: as asserçoes precisam poder rodar de novo.
+  delete from public.agendamentos where franqueado_id = v_franq;
+  delete from public.agendadores_lojas where usuario_id = v_agend;
+  delete from public.usuarios where franqueado_id = v_franq;
+  delete from public.lojas where franqueado_id = v_franq;
+  delete from public.franqueados where id = v_franq;
+  delete from auth.users where email like '%@tenantnovo.com.br';
+end $$;
+
 -- Desfaz o que as asserçoes escreveram, para poderem rodar de novo.
 reset role;
 delete from public.vendas where valor in (1500.50, 200, 100);
