@@ -711,7 +711,15 @@ listando o que falta — em duas frentes:
 
 - **Ambiente:** quais variáveis estão ausentes e o que deixa de funcionar
   sem cada uma.
-- **Banco:** quais migrations ainda não foram aplicadas, pelo número.
+- **Banco:** quais migrations ainda não foram aplicadas, pelo número — e
+  quais foram aplicadas **pela metade**.
+
+A segunda distinção existe porque meia migration engana. Migration inteira
+faltando é fácil de entender: não rodou. Mas com a tabela presente e a função
+ausente, quem olha conclui que ela rodou e vai procurar o problema em outro
+lugar. Costuma ser dependência — uma função referencia coluna de uma
+migration anterior que ainda não rodou, o arquivo foi colado, criou a tabela
+e parou no erro.
 
 A segunda existe porque nada liga o código publicado ao schema aplicado: dá
 para subir uma versão que usa `vendas` num banco que não tem `vendas`, e o

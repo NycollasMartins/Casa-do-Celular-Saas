@@ -139,3 +139,34 @@ async function sondarSchema(): Promise<ItemDeSchema[]> {
 export function schemaCompleto(itens: ItemDeSchema[]): boolean {
   return itens.every((item) => item.presente);
 }
+
+/**
+ * Migrations com PARTE dos objetos no banco.
+ *
+ * POR QUE ISTO MERECE NOME PROPRIO
+ * Uma migration inteira faltando e facil de entender: nao rodou. Meia
+ * migration confunde — a tabela esta la, a funcao nao, e quem olha conclui
+ * que rodou e que o problema e outro.
+ *
+ * O estado e real e foi observado neste projeto: `notificacoes` existe e
+ * `agendamentos_para_lembrete` nao, sendo que as duas nascem no MESMO arquivo.
+ * A funcao referencia `anonimizado_em`, criada pela migration anterior — que
+ * nao tinha rodado. O arquivo foi colado, criou a tabela e parou no erro.
+ *
+ * Sem apontar isso, a resposta lista dois itens soltos e deixa a pessoa
+ * procurar a relacao entre eles.
+ */
+export function migrationsPelaMetade(itens: ItemDeSchema[]): string[] {
+  const porMigration = new Map<string, ItemDeSchema[]>();
+
+  for (const item of itens) {
+    porMigration.set(item.migration, [...(porMigration.get(item.migration) ?? []), item]);
+  }
+
+  return [...porMigration]
+    .filter(
+      ([, deste]) => deste.some((i) => i.presente) && deste.some((i) => !i.presente)
+    )
+    .map(([migration]) => migration)
+    .sort();
+}

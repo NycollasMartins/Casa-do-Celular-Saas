@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ambienteSaudavel, conferirAmbiente } from '@/lib/ambiente';
-import { conferirSchema, schemaCompleto } from '@/lib/prontidao';
+import { conferirSchema, migrationsPelaMetade, schemaCompleto } from '@/lib/prontidao';
 import { verificarRateLimit } from '@/lib/rate-limit';
 import { ipDoCliente } from '@/lib/rede';
 
@@ -41,6 +41,7 @@ export async function GET(request: Request) {
   // erro de conexao no lugar do diagnostico util que ja temos.
   const schema = ambienteOk ? await conferirSchema() : [];
   const faltando = schema.filter((item) => !item.presente);
+  const pelaMetade = migrationsPelaMetade(schema);
   const bancoOk = ambienteOk && schemaCompleto(schema);
 
   const pronto = ambienteOk && bancoOk;
@@ -63,6 +64,19 @@ export async function GET(request: Request) {
               item: item.item,
               migration: item.migration,
             })),
+            ...(pelaMetade.length > 0 && {
+              // Nomear o estado poupa a investigacao: a tabela esta la, a
+              // funcao nao, e as duas vem do mesmo arquivo.
+              aplicadasPelaMetade: pelaMetade,
+              oQueIssoSignifica:
+                (pelaMetade.length === 1
+                  ? `A migration ${pelaMetade[0]} foi colada e parou no meio`
+                  : `As migrations ${pelaMetade.join(' e ')} foram coladas e pararam no meio`) +
+                ' — parte dos objetos existe e parte nao. Costuma ser dependencia: uma funcao ' +
+                'referencia coluna ou tabela de uma migration anterior que ainda nao rodou. ' +
+                'Aplicar o consolidado na ordem resolve, e rodar de novo o que ja existe nao ' +
+                'causa dano.',
+            }),
             ...(faltando.length > 0 && {
               comoResolver:
                 'Rode supabase/APLICAR-PENDENTES.sql no SQL Editor. Se o item existir no ' +
