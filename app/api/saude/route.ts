@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { ambienteSaudavel, conferirAmbiente } from '@/lib/ambiente';
 import { conferirSchema, schemaCompleto } from '@/lib/prontidao';
 import { verificarRateLimit } from '@/lib/rate-limit';
+import { ipDoCliente } from '@/lib/rede';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,12 +22,11 @@ export async function GET(request: Request) {
   // porque nao ha sessao — e sem sessao o `usuario.id` do resto da API nao
   // existe. Doze por minuto sobra para quem esta conferindo um deploy e
   // corta o laco de curl.
-  const ip =
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    request.headers.get('x-real-ip') ??
-    'desconhecido';
-
-  const limite = await verificarRateLimit(`saude:${ip}`, 12);
+  //
+  // O identificador NAO sai do `x-forwarded-for` cru: aquele cabecalho vem do
+  // cliente, e trocar o valor a cada chamada anularia o teto — alem de criar
+  // uma chave nova por requisicao no contador em memoria.
+  const limite = await verificarRateLimit(`saude:${ipDoCliente(request.headers)}`, 12);
   if (!limite.permitido) {
     return NextResponse.json(
       { erro: 'Muitas conferencias seguidas. Tente de novo em instantes.' },

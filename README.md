@@ -725,7 +725,12 @@ migration não rodou.
 
 Sendo aberta e consultando o banco, a rota tem dois freios: o resultado da
 sondagem fica em cache por 30 segundos, e há teto de 12 conferências por
-minuto por IP. Sem eles, uma requisição barata para quem chama viraria dez
+minuto por IP.
+
+O IP vem de `x-nf-client-connection-ip` (ou do equivalente da borda), **não**
+do `x-forwarded-for` cru — esse último é escrito pelo cliente, e trocar o
+valor a cada chamada anularia o teto e ainda criaria uma chave nova no
+contador em memória a cada requisição. Sem eles, uma requisição barata para quem chama viraria dez
 consultas ao Supabase — amplificação clássica.
 
 A rota é aberta e não passa pelo Supabase de propósito — o momento em que

@@ -36,7 +36,41 @@ export interface ResultadoRateLimit {
 
 const contadores = new Map<string, { total: number; expiraEm: number }>();
 
+/**
+ * Teto de chaves distintas guardadas.
+ *
+ * `limparExpirados` sozinha nao basta: ela existia desde o inicio e nunca foi
+ * chamada de lugar nenhum — funcao escrita para impedir um vazamento que nao
+ * impedia. E mesmo chamada, ela so remove o que ja venceu; numa enxurrada de
+ * identificadores diferentes dentro da MESMA janela de um minuto, nada vence
+ * e o mapa cresce igual.
+ *
+ * A rota aberta de saude usa o IP como chave. Com identificador falsificavel,
+ * "chaves distintas por minuto" e um numero que quem chama escolhe.
+ */
+const MAXIMO_DE_CHAVES = 10_000;
+
+function conterCrescimento(): void {
+  // Roda ANTES da insercao, entao precisa abrir espaco para a chave que vem a
+  // seguir: podar ate o teto exato deixaria o mapa com teto + 1.
+  const alvo = MAXIMO_DE_CHAVES - 1;
+
+  if (contadores.size <= alvo) return;
+
+  limparExpirados();
+  if (contadores.size <= alvo) return;
+
+  // Ainda cheio: a janela inteira e recente. Descarta as que reabrem primeiro,
+  // que sao as mais proximas de sumir de qualquer forma.
+  const porVencimento = [...contadores.entries()].sort((a, b) => a[1].expiraEm - b[1].expiraEm);
+  for (const [chave] of porVencimento.slice(0, contadores.size - alvo)) {
+    contadores.delete(chave);
+  }
+}
+
 function verificarEmMemoria(chave: string, limite: number): ResultadoRateLimit {
+  conterCrescimento();
+
   const agora = Date.now();
   const registro = contadores.get(chave);
 
@@ -110,12 +144,17 @@ export async function verificarRateLimit(chave: string, limite = LIMITE_PADRAO):
   }
 }
 
-/** Limpa chaves expiradas para a memoria nao crescer sem limite. */
+/** Remove o que ja venceu. Chamada por `conterCrescimento`, nao sozinha. */
 export function limparExpirados(): void {
   const agora = Date.now();
   contadores.forEach((registro, chave) => {
     if (registro.expiraEm <= agora) contadores.delete(chave);
   });
+}
+
+/** Quantas chaves o contador local guarda agora. Existe para o teste medir. */
+export function chavesEmMemoria(): number {
+  return contadores.size;
 }
 
 /** Zera o estado local. Existe para os testes nao vazarem contagem entre si. */
