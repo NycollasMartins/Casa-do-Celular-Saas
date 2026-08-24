@@ -3,7 +3,7 @@
 import { revalidar as revalidarTelas } from '@/lib/revalidacao';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { usuarioComAcesso, podeGerenciarCadastros } from '@/lib/auth/session';
+import { usuarioComAcesso, podeGerenciarCadastros, podeGerenciarUsuario } from '@/lib/auth/session';
 import {
   franqueadoSchema,
   lojaSchema,
@@ -189,7 +189,62 @@ export async function criarUsuario(formData: FormData): Promise<ResultadoAction>
   }
 
   revalidarTelas('equipe');
-  return { sucesso: true, mensagem: `Usuario criado. Senha provisoria: ${senhaProvisoria}` };
+  return { sucesso: true, mensagem: 'Usuario criado.', senhaProvisoria };
+}
+
+/**
+ * Gera uma nova senha de primeiro acesso para quem ja existe.
+ *
+ * POR QUE ISTO PRECISA EXISTIR
+ * A senha do cadastro aparece uma vez e nao fica gravada em lugar nenhum —
+ * de proposito. Sem esta acao, perder aquele aviso deixava a pessoa sem
+ * entrada: "esqueci a senha" depende do SMTP do Supabase, que pode nao estar
+ * configurado e tem cota baixa, e a unica saida restante era apagar e
+ * recriar o usuario, o que descarta o vinculo com a loja e o historico.
+ *
+ * A sessao antiga cai junto. Trocar a senha sem derrubar a sessao deixaria
+ * quem estivesse logado seguindo logado — o oposto do que se espera de uma
+ * redefinicao.
+ */
+export async function gerarSenhaProvisoria(id: string): Promise<ResultadoAction> {
+  const gestor = await usuarioComAcesso();
+  if (!gestor || !podeGerenciarCadastros(gestor.role)) {
+    return { sucesso: false, mensagem: 'Voce nao tem permissao para redefinir senhas.' };
+  }
+
+  // O RLS NAO protege este caminho: a troca de senha usa a Admin API, que
+  // ignora policy. Sem conferir o tenant aqui, um franqueado redefiniria a
+  // senha de alguem de outro franqueado — e passaria a ter a conta dele.
+  const alvo = await createAdminClient()
+    .from('usuarios')
+    .select('id, nome, franqueado_id')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (!alvo.data) return { sucesso: false, mensagem: 'Usuario nao encontrado.' };
+
+  // A mesma mensagem do "nao encontrado": dizer "sem permissao" confirmaria
+  // que o id existe em outro tenant.
+  if (!podeGerenciarUsuario(gestor, alvo.data)) {
+    return { sucesso: false, mensagem: 'Usuario nao encontrado.' };
+  }
+
+  const admin = createAdminClient();
+  const senhaProvisoria = crypto.randomUUID().slice(0, 12) + 'A1!';
+
+  const { error } = await admin.auth.admin.updateUserById(id, {
+    password: senhaProvisoria,
+    // `nome` e reescrito junto porque o update de user_metadata substitui o
+    // objeto inteiro; omitir apagaria o nome de quem aparece no cabecalho.
+    user_metadata: { nome: alvo.data.nome, senha_provisoria: true },
+  });
+
+  if (error) return { sucesso: false, mensagem: `Nao foi possivel redefinir: ${error.message}` };
+
+  await admin.auth.admin.signOut(id, 'global').catch(() => undefined);
+
+  revalidarTelas('equipe');
+  return { sucesso: true, mensagem: 'Senha redefinida.', senhaProvisoria };
 }
 
 /**

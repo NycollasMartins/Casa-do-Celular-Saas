@@ -89,3 +89,31 @@ export function temSeletorDeLoja(role: UserRole): boolean {
 export function podeExcluirAgendamento(role: UserRole): boolean {
   return role !== 'agendador';
 }
+
+/**
+ * O gestor pode mexer nesta pessoa?
+ *
+ * POR QUE ISTO NAO PODE FICAR SO NO RLS
+ * As acoes que trocam senha ou criam conta usam a Admin API, que ignora
+ * policy — service role tem BYPASSRLS. Nesses caminhos a unica barreira e a
+ * checagem da aplicacao, e ela precisa ser explicita e testavel, nao uma
+ * comparacao solta no meio da funcao.
+ *
+ * Sem ela, um franqueado redefiniria a senha de alguem de outro franqueado —
+ * e passaria a ter a conta dessa pessoa.
+ *
+ * Super admin passa por cima porque administra a rede toda. Alvo sem
+ * franqueado (outro super admin) so e gerenciavel por super admin: o
+ * `null === null` que isso evitaria seria uma brecha, nao uma conveniencia.
+ */
+export function podeGerenciarUsuario(
+  gestor: Pick<Usuario, 'role' | 'franqueado_id'>,
+  alvo: Pick<Usuario, 'franqueado_id'>
+): boolean {
+  if (gestor.role === 'super_admin') return true;
+  if (!podeGerenciarCadastros(gestor.role)) return false;
+
+  if (!gestor.franqueado_id || !alvo.franqueado_id) return false;
+
+  return gestor.franqueado_id === alvo.franqueado_id;
+}

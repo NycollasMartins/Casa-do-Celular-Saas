@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Pencil, UserCheck, UserX } from 'lucide-react';
+import { KeyRound, Pencil, UserCheck, UserX } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,7 +14,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { UsuarioEdicaoForm } from '@/components/forms/usuario-edicao-form';
-import { definirStatusUsuario } from '@/app/actions/cadastros';
+import { definirStatusUsuario, gerarSenhaProvisoria } from '@/app/actions/cadastros';
+import { CredencialProvisoria } from '@/components/forms/credencial-provisoria';
 import type { Usuario } from '@/lib/types/database';
 
 interface Props {
@@ -29,6 +30,7 @@ export function AcoesUsuario({ usuario, lojas, lojaAtualId, ehVoce }: Props) {
   const router = useRouter();
   const [editando, setEditando] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
+  const [credencial, setCredencial] = useState<string | null>(null);
   const [processando, iniciar] = useTransition();
 
   const inativo = usuario.status === 'inativo';
@@ -48,11 +50,46 @@ export function AcoesUsuario({ usuario, lojas, lojaAtualId, ehVoce }: Props) {
     });
   }
 
+  function redefinirSenha() {
+    iniciar(async () => {
+      const resultado = await gerarSenhaProvisoria(usuario.id);
+
+      if (!resultado.sucesso || !resultado.senhaProvisoria) {
+        toast.error(resultado.mensagem ?? 'Nao foi possivel redefinir a senha.');
+        return;
+      }
+
+      setCredencial(resultado.senhaProvisoria);
+      router.refresh();
+    });
+  }
+
   return (
     <div className="flex justify-end gap-1">
       <Button variant="ghost" size="icon" aria-label={`Editar ${usuario.nome}`} onClick={() => setEditando(true)}>
         <Pencil className="h-4 w-4" aria-hidden />
       </Button>
+
+      {/* Sem isto, perder a senha do cadastro so se resolvia apagando e
+          recriando a pessoa — o que descarta o vinculo com a loja. Fica
+          escondido para quem esta desligado: senha nova nao daria acesso. */}
+      {!inativo ? (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={`Gerar nova senha de acesso para ${usuario.nome}`}
+          onClick={redefinirSenha}
+          loading={processando}
+        >
+          <KeyRound className="h-4 w-4" aria-hidden />
+        </Button>
+      ) : null}
+
+      <CredencialProvisoria
+        email={usuario.email}
+        senha={credencial}
+        aoFechar={() => setCredencial(null)}
+      />
 
       {!ehVoce ? (
         <Button

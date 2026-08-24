@@ -14,6 +14,13 @@ export interface ResultadoAction {
   /** Erros por campo, no formato que o React Hook Form consome. */
   erros?: Record<string, string[]>;
   id?: string;
+  /**
+   * Senha de primeiro acesso, quando a acao gera uma.
+   *
+   * Vem em campo proprio, e nao embutida na mensagem, porque a tela precisa
+   * exibi-la de forma copiavel e permanente — nao num aviso que some.
+   */
+  senhaProvisoria?: string;
 }
 
 function extrair(formData: FormData) {

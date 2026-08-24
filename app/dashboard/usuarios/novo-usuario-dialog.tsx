@@ -12,11 +12,14 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { UsuarioForm } from '@/components/forms/usuario-form';
+import { CredencialProvisoria } from '@/components/forms/credencial-provisoria';
 
 export function UsuarioDialog({ lojas }: { lojas: { id: string; nome: string }[] }) {
   const [aberto, setAberto] = useState(false);
+  const [credencial, setCredencial] = useState<{ email: string; senha: string } | null>(null);
 
   return (
+    <>
     <Dialog open={aberto} onOpenChange={setAberto}>
       <DialogTrigger asChild>
         <Button>
@@ -28,11 +31,25 @@ export function UsuarioDialog({ lojas }: { lojas: { id: string; nome: string }[]
         <DialogHeader>
           <DialogTitle>Novo usuario</DialogTitle>
           <DialogDescription>
-            A senha provisoria aparece na confirmacao. Anote e repasse com seguranca.
+            A senha de primeiro acesso aparece ao salvar, numa janela propria. Anote e repasse
+            com seguranca.
           </DialogDescription>
         </DialogHeader>
-        <UsuarioForm lojas={lojas} onSalvo={() => setAberto(false)} />
+        <UsuarioForm
+          lojas={lojas}
+          onSalvo={(nova) => {
+            setAberto(false);
+            if (nova) setCredencial(nova);
+          }}
+        />
       </DialogContent>
     </Dialog>
+
+    <CredencialProvisoria
+      email={credencial?.email ?? ''}
+      senha={credencial?.senha ?? null}
+      aoFechar={() => setCredencial(null)}
+    />
+    </>
   );
 }

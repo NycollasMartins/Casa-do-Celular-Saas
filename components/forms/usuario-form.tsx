@@ -14,7 +14,8 @@ import { criarUsuario } from '@/app/actions/cadastros';
 
 interface Props {
   lojas: { id: string; nome: string }[];
-  onSalvo?: () => void;
+  /** Recebe a credencial gerada: quem exibe e o pai, num dialogo que fica. */
+  onSalvo?: (credencial?: { email: string; senha: string }) => void;
 }
 
 /** Cria um usuario e ja monta o vinculo com a loja (agendador) ou a participacao (diretor). */
@@ -45,9 +46,14 @@ export function UsuarioForm({ lojas, onSalvo }: Props) {
       return;
     }
 
-    // A senha provisoria vem na mensagem: fica visivel por mais tempo.
-    toast.success(resultado.mensagem ?? 'Usuario criado.', { duration: 12000 });
-    onSalvo?.();
+    toast.success(resultado.mensagem ?? 'Usuario criado.');
+    // A senha nao vai para o toast: some antes de ser anotada, e some para
+    // sempre — nao ha onde consulta-la depois.
+    onSalvo?.(
+      resultado.senhaProvisoria
+        ? { email: valores.email, senha: resultado.senhaProvisoria }
+        : undefined
+    );
     router.refresh();
   }
 
