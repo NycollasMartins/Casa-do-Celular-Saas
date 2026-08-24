@@ -45,7 +45,13 @@ function VazioOuGrafico({ vazio, children }: { vazio: boolean; children: React.R
 /** Os 4 graficos do dashboard. Todos responsivos via ResponsiveContainer. */
 export function ChartsContainer({ metricas }: { metricas: ResumoMetricas }) {
   const semDados = metricas.totalContatos === 0;
-  const rankingTop = metricas.dadosPorAgendador.slice(0, 10);
+  // Dez cabem no grafico; mais que isso vira barra de um pixel. Mas o corte
+  // precisa APARECER: sem dizer, "Ranking de agendadores" com dez linhas
+  // parece a equipe inteira — e quem o franqueado precisa ver e justamente
+  // quem ficou de fora, no fim da lista.
+  const LIMITE_DO_GRAFICO = 10;
+  const rankingTop = metricas.dadosPorAgendador.slice(0, LIMITE_DO_GRAFICO);
+  const foraDoGrafico = metricas.dadosPorAgendador.length - rankingTop.length;
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -75,8 +81,15 @@ export function ChartsContainer({ metricas }: { metricas: ResumoMetricas }) {
       {/* 2. Ranking de agendadores */}
       <Card>
         <CardHeader>
-          <CardTitle>Ranking de agendadores</CardTitle>
-          <CardDescription>Taxa de conversao, do maior para o menor</CardDescription>
+          <CardTitle>
+            {foraDoGrafico > 0 ? `Ranking de agendadores · top ${LIMITE_DO_GRAFICO}` : 'Ranking de agendadores'}
+          </CardTitle>
+          <CardDescription>
+            Taxa de conversao, do maior para o menor
+            {foraDoGrafico > 0
+              ? ` · outros ${foraDoGrafico} em Relatorios, que lista a equipe inteira`
+              : ''}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <VazioOuGrafico vazio={rankingTop.length === 0}>

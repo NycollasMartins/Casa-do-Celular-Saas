@@ -531,6 +531,34 @@ export async function calcularMetricasPorLoja(filtros: FiltroMetricas = {}) {
   return agregarPorLoja(registros, vendas);
 }
 
+/**
+ * Resumo geral E por loja, de UMA leitura.
+ *
+ * POR QUE EXISTE
+ * A tela de Relatorios pedia as duas coisas chamando `calcularMetricas` e
+ * `calcularMetricasPorLoja`. Cada uma varre o periodo inteiro e depois busca
+ * as vendas correspondentes — entao a tela pagava tudo em dobro, agendamentos
+ * e vendas.
+ *
+ * O mesmo desperdicio ja tinha sido encontrado e corrigido em
+ * `desempenhoNaCompetencia`, cujo comentario descreve exatamente este caso.
+ * Faltou aqui.
+ *
+ * Custa mais do que parece: a leitura completa sai do Supabase por HTTP, em
+ * paginas — dobrar a leitura dobra o numero de idas e voltas, nao so o
+ * trabalho do banco.
+ */
+export async function calcularMetricasEPorLoja(filtros: FiltroMetricas = {}) {
+  const { inicio, fim } = resolverIntervalo(filtros);
+  const registros = await buscarAgendamentos(filtros);
+  const vendas = await buscarVendasDosAgendamentos(registros.map((r) => r.id));
+
+  return {
+    metricas: agregarMetricas(registros, vendas, inicio, fim),
+    porLoja: agregarPorLoja(registros, vendas),
+  };
+}
+
 
 
 /**

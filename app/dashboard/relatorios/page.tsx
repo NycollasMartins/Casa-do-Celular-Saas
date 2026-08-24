@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { exigirRole } from '@/lib/auth/session';
-import { buscarLojasDoUsuario, calcularMetricas, calcularMetricasPorLoja } from '@/lib/supabase/queries';
+import { buscarLojasDoUsuario, calcularMetricasEPorLoja } from '@/lib/supabase/queries';
 import { lerFiltros, type ParametrosBusca } from '@/lib/filtros';
 import { formatarNumero, formatarPercentual } from '@/lib/utils';
 import { formatarBrl } from '@/lib/dinheiro';
@@ -16,10 +16,11 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
   const usuario = await exigirRole(['super_admin', 'franqueado', 'diretor']);
   const filtros = lerFiltros(searchParams);
 
-  const [lojas, porLoja, metricas] = await Promise.all([
+  // UMA leitura para as duas agregacoes. Pedir separado varria o periodo
+  // inteiro duas vezes — e buscava as vendas duas vezes junto.
+  const [lojas, { porLoja, metricas }] = await Promise.all([
     buscarLojasDoUsuario(),
-    calcularMetricasPorLoja(filtros),
-    calcularMetricas(filtros),
+    calcularMetricasEPorLoja(filtros),
   ]);
 
   // As colunas de faturamento so entram quando ha venda no periodo. Numa
