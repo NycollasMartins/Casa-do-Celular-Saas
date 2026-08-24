@@ -30,14 +30,47 @@ describe('estado vazio das tabelas', () => {
     expect(arquivos.length).toBeGreaterThan(5);
   });
 
-  it.each(arquivos)('%s trata a lista vazia', (caminho) => {
+  /**
+   * Confere DENTRO do bloco de cada `<TableBody>`.
+   *
+   * Duas tentativas anteriores falharam, e vale registrar por que:
+   *
+   *  - Procurar `length === 0` no arquivo inteiro passava quando UMA das duas
+   *    tabelas tratava o vazio. Verificado: removendo o tratamento da
+   *    primeira tabela de participacoes, o teste continuava verde.
+   *  - Contar ocorrencias tambem passava: aquele arquivo usa `length` para
+   *    outras coisas, e a contagem nunca caia abaixo do numero de tabelas.
+   *
+   * Dentro do bloco o sinal e inequivoco: o idioma do vazio e uma linha com
+   * `colSpan`, seja via <LinhaVazia> ou escrita a mao.
+   *
+   * Sobra um caso legitimo sem sinal nenhum: a tabela que nao chega a ser
+   * renderizada porque o card inteiro esta dentro de uma condicao. Esse vira
+   * isencao declarada, com o motivo — nao um vazamento do criterio.
+   */
+  const ESCONDIDAS_POR_FORA: Record<string, string> = {
+    'app/dashboard/participacoes/page.tsx':
+      'a tabela de encerradas vive dentro de `encerradas.length > 0`: some inteira',
+  };
+
+  it.each(arquivos)('%s trata o vazio dentro de cada tabela', (caminho) => {
     const fonte = readFileSync(caminho, 'utf8');
+    const blocos = fonte.split('<TableBody>').slice(1);
 
-    // Vale tratar dentro da tabela (LinhaVazia) ou esconder a tabela inteira
-    // por fora, como a de participacoes encerradas faz.
-    const trata = /LinhaVazia|length === 0|length > 0|length !== 0/.test(fonte);
+    const semTratamento = blocos
+      .map((bloco, indice) => ({ corpo: bloco.split('</TableBody>')[0], indice }))
+      .filter(({ corpo }) => !/LinhaVazia|colSpan/.test(corpo))
+      .map(({ indice }) => `tabela ${indice + 1}`);
 
-    expect(trata).toBe(true);
+    const permitidas = caminho in ESCONDIDAS_POR_FORA ? 1 : 0;
+
+    expect(semTratamento.length).toBeLessThanOrEqual(permitidas);
+  });
+
+  it('nao ha isencao orfa', () => {
+    const orfas = Object.keys(ESCONDIDAS_POR_FORA).filter((c) => !arquivos.includes(c));
+
+    expect(orfas).toEqual([]);
   });
 });
 

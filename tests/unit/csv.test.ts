@@ -121,8 +121,25 @@ describe('nenhum CSV montado a mao', () => {
     expect(arquivos.length).toBeGreaterThan(0);
   });
 
-  it.each(arquivos)('%s usa gerarCsv', (caminho) => {
-    expect(readFileSync(caminho, 'utf8')).toContain('gerarCsv');
+  /**
+   * Compara a QUANTIDADE de arquivos CSV criados com a de chamadas ao modulo.
+   *
+   * A primeira versao so exigia que `gerarCsv` aparecesse em algum lugar do
+   * arquivo — uma segunda geracao montada a mao, ao lado da correta, passava
+   * batido. E foi exatamente uma segunda geracao esquecida que executava
+   * formula na maquina de quem abrisse a planilha.
+   *
+   * Tentei antes uma janela de linhas em volta, e ela acusou o codigo certo:
+   * a lista de colunas e longa, e a chamada fica dezenas de linhas acima do
+   * `new Blob`. Contar nao depende de distancia.
+   */
+  it.each(arquivos)('%s: um gerarCsv para cada CSV criado', (caminho) => {
+    const fonte = readFileSync(caminho, 'utf8');
+
+    const criados = (fonte.match(/text\/csv/g) ?? []).length;
+    const pelaBiblioteca = (fonte.match(/gerarCsv[<(]/g) ?? []).length;
+
+    expect(pelaBiblioteca).toBeGreaterThanOrEqual(criados);
   });
 });
 
