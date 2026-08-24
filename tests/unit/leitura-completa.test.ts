@@ -20,9 +20,18 @@ import { describe, expect, it } from 'vitest';
  * afirmacao confiante e falsa.
  *
  * `lerPaginado` resolve os dois: pagina ate o fim e levanta o erro.
+ *
+ * A PRIMEIRA VERSAO DESTE TESTE OLHAVA SO AS TELAS
+ * Varria `app/**\/*.tsx` e deixava as Server Action de fora — que e onde
+ * mora a leitura mais delicada do sistema: a que junta os registros de um
+ * CPF para anonimizar. Cortada, ela anonimizaria parte, responderia "pronto"
+ * e deixaria dado pessoal para tras, num pedido que a LGPD obriga a atender
+ * por inteiro.
  */
 
-const paginas = execSync('find app -name "*.tsx"', { encoding: 'utf8' })
+const paginas = execSync('find app -name "*.tsx" -o -name "*.ts" -path "*/actions/*"', {
+  encoding: 'utf8',
+})
   .trim()
   .split('\n')
   .filter(Boolean);
@@ -38,20 +47,39 @@ describe('leitura de lista nas telas', () => {
     expect(culpadas).toEqual([]);
   });
 
-  it('toda tela que consulta uma lista usa lerPaginado', () => {
-    const culpadas = paginas.filter((caminho) => {
-      const fonte = readFileSync(caminho, 'utf8');
-      if (!fonte.includes('.select(')) return false;
+  /**
+   * Confere CADA `.select(`, nao o arquivo inteiro.
+   *
+   * A primeira versao isentava o arquivo todo quando encontrava um
+   * `.maybeSingle()` em qualquer lugar dele. Quatro arquivos caiam nessa
+   * isencao sem ninguem notar — entre eles as duas Server Action de LGPD,
+   * que sao a leitura mais delicada do sistema. A trava existia e nao
+   * travava nada ali.
+   *
+   * A janela de linhas em volta e uma aproximacao, mas erra para o lado
+   * seguro: encadeamento espalhado por mais linhas do que ela alcanca vira
+   * uma reprovacao a investigar, nao uma isencao silenciosa.
+   */
+  const JANELA = 8;
 
-      // `count: 'exact', head: true` nao traz linha nenhuma — nao ha o que
-      // paginar. `single`/`maybeSingle` pedem uma linha so.
-      const soContagem = /count: 'exact'/.test(fonte);
-      const soUmaLinha = /\.single\(\)|\.maybeSingle\(\)/.test(fonte);
-      if (soContagem || soUmaLinha) return false;
+  it.each(paginas)('%s pagina toda leitura de lista', (caminho) => {
+    const linhas = readFileSync(caminho, 'utf8').split('\n');
 
-      return !fonte.includes('lerPaginado');
-    });
+    const desprotegidas = linhas
+      .map((linha, indice) => ({ linha, indice }))
+      .filter(({ linha }) => linha.includes('.select('))
+      .filter(({ indice }) => {
+        const volta = linhas.slice(Math.max(0, indice - JANELA), indice + JANELA).join('\n');
 
-    expect(culpadas).toEqual([]);
+        // Contagem pura nao traz linha; `single` pede uma so. Nos dois casos
+        // nao ha o que paginar.
+        if (/count: 'exact'/.test(volta)) return false;
+        if (/\.single\(\)|\.maybeSingle\(\)/.test(volta)) return false;
+
+        return !/lerPaginado|\.range\(/.test(volta);
+      })
+      .map(({ indice }) => `linha ${indice + 1}`);
+
+    expect(desprotegidas).toEqual([]);
   });
 });

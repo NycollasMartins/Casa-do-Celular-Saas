@@ -4,7 +4,7 @@ import { revalidar as revalidarTelas } from '@/lib/revalidacao';
 import { createClient } from '@/lib/supabase/server';
 import { usuarioComAcesso, podeGerenciarCadastros } from '@/lib/auth/session';
 import { agendamentoSchema, novoAgendamentoSchema, vendaSchema } from '@/lib/validations/agendamento';
-import { calcularMetricas, buscarLojasDoUsuario } from '@/lib/supabase/queries';
+import { calcularMetricas, buscarLojasDoUsuario, lerPaginado } from '@/lib/supabase/queries';
 import type { FiltroMetricas } from '@/lib/types/metricas';
 import { camposAnonimizados, normalizarCpfParaBusca } from '@/lib/lgpd';
 
@@ -203,14 +203,33 @@ export async function anonimizarPorCpf(cpf: string): Promise<ResultadoAction & {
 
   const supabase = createClient();
 
-  const { data: alvos, error: erroBusca } = await supabase
-    .from('agendamentos')
-    .select('id')
-    .eq('cliente_cpf', cpfFormatado)
-    .is('anonimizado_em', null);
+  // Paginado, e aqui o motivo pesa mais que em outras telas.
+  //
+  // Leitura sem paginar e cortada pelo teto de linhas do PostgREST sem
+  // devolver erro. Numa lista isso mostra dado a menos; AQUI significaria
+  // anonimizar parte dos registros do titular, responder "pronto" e deixar
+  // dado pessoal para tras — num pedido que a LGPD obriga a atender por
+  // inteiro (art. 18, VI).
+  let alvos: { id: string }[];
+  try {
+    alvos = await lerPaginado<{ id: string }>(
+      (de, ate) =>
+        supabase
+          .from('agendamentos')
+          .select('id')
+          .eq('cliente_cpf', cpfFormatado)
+          .is('anonimizado_em', null)
+          .range(de, ate),
+      { oQue: 'os registros do titular' }
+    );
+  } catch (excecao) {
+    return {
+      sucesso: false,
+      mensagem: excecao instanceof Error ? excecao.message : 'Nao foi possivel consultar.',
+    };
+  }
 
-  if (erroBusca) return { sucesso: false, mensagem: `Nao foi possivel consultar: ${erroBusca.message}` };
-  if (!alvos || alvos.length === 0) {
+  if (alvos.length === 0) {
     return { sucesso: false, mensagem: 'Nenhum registro com dados pessoais para este CPF.' };
   }
 
@@ -246,14 +265,28 @@ export async function contarRegistrosDoCpf(
   if (!cpfFormatado) return { total: 0, anonimizados: 0, erro: 'Informe um CPF com 11 digitos.' };
 
   const supabase = createClient();
-  const { data, error } = await supabase
-    .from('agendamentos')
-    .select('anonimizado_em')
-    .eq('cliente_cpf', cpfFormatado);
 
-  if (error) return { total: 0, anonimizados: 0, erro: error.message };
-
-  const linhas = data ?? [];
+  // E o numero que a tela mostra ANTES de confirmar. Cortado, ele diria "3
+  // registros" onde ha mais, e quem confirma acha que sabe o tamanho do que
+  // esta fazendo.
+  let linhas: { anonimizado_em: string | null }[];
+  try {
+    linhas = await lerPaginado<{ anonimizado_em: string | null }>(
+      (de, ate) =>
+        supabase
+          .from('agendamentos')
+          .select('anonimizado_em')
+          .eq('cliente_cpf', cpfFormatado)
+          .range(de, ate),
+      { oQue: 'os registros do titular' }
+    );
+  } catch (excecao) {
+    return {
+      total: 0,
+      anonimizados: 0,
+      erro: excecao instanceof Error ? excecao.message : 'Nao foi possivel consultar.',
+    };
+  }
   return {
     total: linhas.length,
     anonimizados: linhas.filter((linha) => linha.anonimizado_em !== null).length,

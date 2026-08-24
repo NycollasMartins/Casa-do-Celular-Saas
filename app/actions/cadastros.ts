@@ -16,6 +16,7 @@ import {
 import { planejarVinculos, selecionarParaReabrir, tabelaDoVinculo } from '@/lib/vinculos';
 import { ehDataIso, hojeNaLoja } from '@/lib/semana';
 import type { ResultadoAction } from './agendamentos';
+import { lerPaginado } from '@/lib/supabase/queries';
 
 /**
  * Hoje para as colunas `date`. Delega a fonte unica: toISOString devolveria
@@ -279,13 +280,32 @@ export async function atualizarUsuario(id: string, formData: FormData): Promise<
   // no seed, o diretor 1 tem cinco —, entao consultar com maybeSingle aqui
   // devolvia erro que era ignorado, e o plano era montado como se nao
   // houvesse participacao nenhuma.
-  const [{ data: agendadorAtivos }, { data: participacaoAtivas }] = await Promise.all([
-    supabase.from('agendadores_lojas').select('id, loja_id').eq('usuario_id', id).is('data_fim', null),
-    supabase
-      .from('participacoes_societarias')
-      .select('id, loja_id')
-      .eq('usuario_id', id)
-      .is('data_fim', null),
+  // Uma pessoa deveria ter um vinculo, e nunca mil — entao o teto de linhas do
+  // servidor nao alcanca isto na pratica. Passa por `lerPaginado` assim mesmo:
+  // e desta leitura que sai o plano de QUAIS vinculos encerrar, e uma lista
+  // cortada deixaria vinculo aberto sem ninguem ver. Depender do "na pratica
+  // nao acontece" e o que faz a proxima leitura nascer sem protecao.
+  const [agendadorAtivos, participacaoAtivas] = await Promise.all([
+    lerPaginado<{ id: string; loja_id: string }>(
+      (de, ate) =>
+        supabase
+          .from('agendadores_lojas')
+          .select('id, loja_id')
+          .eq('usuario_id', id)
+          .is('data_fim', null)
+          .range(de, ate),
+      { oQue: 'as lotacoes' }
+    ),
+    lerPaginado<{ id: string; loja_id: string }>(
+      (de, ate) =>
+        supabase
+          .from('participacoes_societarias')
+          .select('id, loja_id')
+          .eq('usuario_id', id)
+          .is('data_fim', null)
+          .range(de, ate),
+      { oQue: 'as participacoes' }
+    ),
   ]);
 
   const plano = planejarVinculos({
