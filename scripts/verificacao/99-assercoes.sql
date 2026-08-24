@@ -728,6 +728,74 @@ begin
   delete from public.usuarios where email = 'probe@x.com';
 end $$;
 
+-- ============ metas nao atravessam a fronteira do tenant ============
+--
+-- POR QUE ISTO FALTAVA
+-- Todas as assercoes de isolamento usavam UM tenant: o do seed. Um vazamento
+-- entre tenants nao aparece com um tenant so — nao ha para onde vazar.
+--
+-- `metas_write` era `for all` com `using (pode_gerenciar())`, sem escopo. O
+-- `with check` dela e restrito, e e o que se ve ao ler a migration; mas
+-- `using` decide QUAIS LINHAS a pessoa alcanca, e `for all` cobre SELECT e
+-- DELETE — o primeiro somando-se ao metas_select por OU, o segundo sem
+-- `with check` nenhum para corrigir.
+do $$
+declare
+  v_dono uuid; v_f2 uuid; v_dono2 uuid; v_ag2 uuid; v_loja2 uuid; v_meta uuid;
+  v_n int;
+begin
+  select id into v_dono from auth.users where email = 'dono@franqueado.com.br';
+
+  -- Segundo tenant, montado como dono do banco: e o equivalente ao que o
+  -- painel do Supabase faz.
+  insert into public.franqueados (nome, cnpj) values ('Outro Tenant','12312312312312')
+    returning id into v_f2;
+  insert into public.lojas (franqueado_id, nome, codigo_loja, estado, cidade)
+    values (v_f2,'Loja do Outro','OUT-1','RJ','Rio') returning id into v_loja2;
+  insert into auth.users (email) values ('dono2@outro.com') returning id into v_dono2;
+  insert into public.usuarios (id,email,nome,role,franqueado_id)
+    values (v_dono2,'dono2@outro.com','Dono2','franqueado',v_f2);
+  insert into auth.users (email) values ('ag2@outro.com') returning id into v_ag2;
+  insert into public.usuarios (id,email,nome,role,franqueado_id)
+    values (v_ag2,'ag2@outro.com','Ag2','agendador',v_f2);
+  insert into public.agendadores_lojas (usuario_id,loja_id,data_inicio)
+    values (v_ag2,v_loja2,current_date);
+  insert into public.metas (usuario_id,competencia,meta_agendamentos,definida_por)
+    values (v_ag2, date_trunc('month',current_date)::date, 50, v_dono2)
+    returning id into v_meta;
+
+  perform set_config('request.jwt.claim.sub', v_dono::text, false);
+  set role authenticated;
+
+  perform pg_temp.checar('franqueado NAO ve meta de outro tenant', '0',
+    (select count(*)::text from public.metas where id = v_meta));
+
+  -- Mede o EFEITO. Um DELETE que o RLS filtra afeta zero linhas e nao
+  -- levanta erro: contar a excecao nao provaria nada.
+  begin
+    delete from public.metas where id = v_meta;
+  exception when others then null;
+  end;
+  reset role;
+
+  select count(*) into v_n from public.metas where id = v_meta;
+  perform pg_temp.checar('franqueado NAO apaga meta de outro tenant', '1', v_n::text);
+
+  -- O que continua valendo: o dono do tenant B alcanca a propria meta.
+  perform set_config('request.jwt.claim.sub', v_dono2::text, false);
+  set role authenticated;
+  perform pg_temp.checar('o dono do tenant B AINDA ve a propria meta', '1',
+    (select count(*)::text from public.metas where id = v_meta));
+  reset role;
+
+  delete from public.metas where usuario_id = v_ag2;
+  delete from public.agendadores_lojas where usuario_id = v_ag2;
+  delete from public.usuarios where franqueado_id = v_f2;
+  delete from public.lojas where franqueado_id = v_f2;
+  delete from public.franqueados where id = v_f2;
+  delete from auth.users where email in ('dono2@outro.com','ag2@outro.com');
+end $$;
+
 -- Desfaz o que as asserçoes escreveram, para poderem rodar de novo.
 reset role;
 delete from public.vendas where valor in (1500.50, 200, 100);
