@@ -620,6 +620,99 @@ begin
   delete from auth.users where email like '%@tenantnovo.com.br';
 end $$;
 
+-- ============ super admin so nasce de outro super admin ============
+--
+-- POR QUE ISTO FALTAVA
+-- Nenhuma assercao mencionava `super_admin`. As escaladas testadas eram
+-- todas do agendador para cima, e o papel mais alto do sistema nunca entrou
+-- em nenhuma delas.
+--
+-- Foi ai que estava a falha: a policy de INSERT proibia um franqueado de
+-- criar conta com esse papel, e a de UPDATE nao ganhou o equivalente. O
+-- trigger de campos sensiveis devolve `new` para quem passa em
+-- `pode_gerenciar()`, e franqueado passa.
+--
+-- Um UPDATE e a rede inteira fica visivel. Estas asserçoes medem o EFEITO —
+-- o papel gravado — e nao a ausencia de excecao: um UPDATE que o RLS filtra
+-- afeta zero linhas e nao levanta erro nenhum. Foi o que quase me fez
+-- relatar uma escalada de diretor que nao existe.
+do $$
+declare
+  v_dono  uuid;
+  v_ag    uuid;
+  v_dir   uuid;
+  v_papel text;
+begin
+  select id into v_dono from auth.users where email = 'dono@franqueado.com.br';
+  select id into v_ag   from auth.users where email = 'agendador1.loja1@franqueado.com.br';
+  select id into v_dir  from auth.users where email = 'diretor1@franqueado.com.br';
+
+  -- 1. Franqueado promovendo alguem do proprio tenant.
+  perform set_config('request.jwt.claim.sub', v_dono::text, false);
+  set role authenticated;
+  begin
+    update public.usuarios set role = 'super_admin' where id = v_ag;
+  exception when others then null;
+  end;
+  reset role;
+  select role::text into v_papel from public.usuarios where id = v_ag;
+  perform pg_temp.checar('franqueado NAO cria super admin', 'agendador', v_papel);
+  update public.usuarios set role = 'agendador' where id = v_ag;
+
+  -- 2. Franqueado promovendo a si mesmo — o caminho mais direto.
+  perform set_config('request.jwt.claim.sub', v_dono::text, false);
+  set role authenticated;
+  begin
+    update public.usuarios set role = 'super_admin' where id = v_dono;
+  exception when others then null;
+  end;
+  reset role;
+  select role::text into v_papel from public.usuarios where id = v_dono;
+  perform pg_temp.checar('franqueado NAO se promove a super admin', 'franqueado', v_papel);
+  update public.usuarios set role = 'franqueado' where id = v_dono;
+
+  -- 3. Diretor nao alcanca nem a linha: a policy de update ja o filtra.
+  perform set_config('request.jwt.claim.sub', v_dir::text, false);
+  set role authenticated;
+  begin
+    update public.usuarios set role = 'super_admin' where id = v_ag;
+  exception when others then null;
+  end;
+  reset role;
+  select role::text into v_papel from public.usuarios where id = v_ag;
+  perform pg_temp.checar('diretor NAO cria super admin', 'agendador', v_papel);
+  update public.usuarios set role = 'agendador' where id = v_ag;
+
+  -- 4. O que continua funcionando: gerenciar papel dentro do tenant.
+  perform set_config('request.jwt.claim.sub', v_dono::text, false);
+  set role authenticated;
+  begin
+    update public.usuarios set role = 'diretor' where id = v_ag;
+  exception when others then null;
+  end;
+  reset role;
+  select role::text into v_papel from public.usuarios where id = v_ag;
+  perform pg_temp.checar('franqueado AINDA promove a diretor', 'diretor', v_papel);
+  update public.usuarios set role = 'agendador' where id = v_ag;
+
+  -- 5. E o insert, que ja era barrado antes desta migration.
+  perform set_config('request.jwt.claim.sub', v_dono::text, false);
+  set role authenticated;
+  declare v_erro text;
+  begin
+    begin
+      insert into public.usuarios (id, email, nome, role, franqueado_id)
+      values (gen_random_uuid(), 'probe@x.com', 'Probe', 'super_admin',
+              (select franqueado_id from public.usuarios where id = v_dono));
+      v_erro := 'nao barrou';
+    exception when others then v_erro := 'barrou';
+    end;
+    perform pg_temp.checar('insert de super admin continua barrado', 'barrou', v_erro);
+  end;
+  reset role;
+  delete from public.usuarios where email = 'probe@x.com';
+end $$;
+
 -- Desfaz o que as asserçoes escreveram, para poderem rodar de novo.
 reset role;
 delete from public.vendas where valor in (1500.50, 200, 100);

@@ -134,7 +134,7 @@ Abra `http://localhost:3000`. Sem sessão, o middleware manda para
 > nova ser esquecida para o arquivo aplicar um schema parcial — que é
 > exatamente o estado em que este projeto já esteve.
 
-A ordem importa. São treze passos:
+A ordem importa. São catorze passos:
 
 **1. Schema** — no SQL Editor do Supabase, cole e execute
 `supabase/migrations/`.
@@ -408,9 +408,9 @@ npm run verificar:banco
 
 Cria um banco descartável no PostgreSQL local, reproduz o que o Supabase
 fornece (schema `auth`, `auth.uid()`, os papéis), aplica **todas** as
-migrations na ordem, popula o seed e roda **70 asserções**:
+migrations na ordem, popula o seed e roda **75 asserções**:
 
-- **44 de RLS**, impersonando cada papel — inclusive a tentativa de escalada
+- **49 de RLS**, impersonando cada papel — inclusive a tentativa de escalada
   de privilégio, que precisa ser barrada. Nove delas espelham afirmações de
   `tests/rls/*.test.ts`, que dependem do PostgREST e nunca rodaram: uma
   dessas afirmações já se mostrou errada, e conferir as demais aqui evita
@@ -444,7 +444,7 @@ de uma vez e que repara aplicação parcial. Nenhuma das duas estava
 verificada. Se fossem falsas, a descoberta viria no pior lugar possível —
 erro no meio da execução, em produção, sem transação para desfazer.
 
-Três cenários, e em todos as 70 asserções de comportamento precisam passar
+Três cenários, e em todos as 75 asserções de comportamento precisam passar
 no fim:
 
 - **Aplicação parcial**: schema, RLS e seed prontos, mais algumas migrations
@@ -458,7 +458,7 @@ no fim:
 
 `.github/workflows/ci.yml` roda a cada push na `main` e em cada pull request:
 checagem de tipos, lint, testes unitários, build de produção e — num
-container Postgres descartável — as 12 migrations com as 70 asserções de RLS
+container Postgres descartável — as 13 migrations com as 75 asserções de RLS
 e funções. É o que impede uma migration quebrada chegar ao SQL Editor. A Netlify
 publica a partir da `main`, então sem essa verificação um commit que quebra o
 build vai direto para produção e só aparece quando alguém abre o sistema.
