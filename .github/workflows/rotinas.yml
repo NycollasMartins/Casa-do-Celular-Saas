@@ -1,10 +1,14 @@
 name: Rotinas agendadas
 
 # POR QUE ESTE ARQUIVO EXISTE
-# O sistema anuncia duas rotinas — o lembrete da vespera e o resumo semanal —
-# e o README diz que sao "feitas para rodar" uma vez por dia e toda segunda.
-# Nada as executava. Existiam como scripts esperando alguem digitar o comando,
-# o que em producao significa: nunca rodaram.
+# O sistema anuncia TRES rotinas — lembrete da vespera, resumo semanal e a
+# varredura de retencao da LGPD — e o README diz que sao "feitas para rodar"
+# uma vez por dia, toda segunda e todo mes. Nada as executava. Existiam como
+# scripts esperando alguem digitar o comando, o que em producao significa:
+# nunca rodaram.
+#
+# A de retencao entrou depois das outras duas: eu tinha corrigido so as que
+# mandam mensagem e deixado justamente a que apaga dado.
 #
 # POR QUE AQUI E NAO NUMA FUNCAO DA NETLIFY
 # Os dois scripts sao `.mjs` de topo de arquivo, que executam ao carregar e
@@ -34,6 +38,8 @@ on:
     # 11:00 UTC de segunda = 08:00 em Sao Paulo. O franqueado abre a semana
     # com o numero da semana fechada.
     - cron: '0 11 * * 1'
+    # 09:00 UTC do dia 1 = 06:00 em Sao Paulo. Varredura de retencao da LGPD.
+    - cron: '0 9 1 * *'
 
   # Permite rodar a mao — inclusive em modo seco, que lista sem enviar.
   workflow_dispatch:
@@ -41,7 +47,7 @@ on:
       rotina:
         description: Qual rotina rodar
         type: choice
-        options: [lembrete, relatorio]
+        options: [lembrete, relatorio, retencao]
         required: true
       seco:
         description: Modo seco (lista o que faria, nao envia)
@@ -53,7 +59,16 @@ jobs:
     name: Lembrete da vespera
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: github.event_name == 'schedule' || inputs.rotina == 'lembrete'
+    # Filtra pelo cron DIARIO, nao por "veio de agendamento".
+    #
+    # `github.event_name == 'schedule'` casa com qualquer um dos tres crons:
+    # o lembrete rodaria tambem as segundas as 8h e no dia 1o as 6h, fora do
+    # fim de tarde para que foi desenhado. Nao chegaria a mandar mensagem
+    # repetida — o indice unico de notificacoes impede —, mas rodaria quando
+    # ninguem pediu.
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '0 21 * * *')
+      || inputs.rotina == 'lembrete'
 
     steps:
       - uses: actions/checkout@v4
@@ -142,4 +157,64 @@ jobs:
             npm run relatorio:semanal -- --seco
           else
             npm run relatorio:semanal
+          fi
+
+  retencao:
+    name: Retencao LGPD
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '0 9 1 * *')
+      || inputs.rotina == 'retencao'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # ESTA ROTINA APAGA DADO, E POR ISSO TEM UMA TRAVA A MAIS.
+      #
+      # As outras duas so mandam mensagem: sem credencial de canal, nao sai
+      # nada. Aqui nao ha canal — bastariam as chaves do Supabase, que a
+      # pessoa configura para o lembrete, e a anonimizacao comecaria sozinha.
+      # Ligar o lembrete nao pode ligar, de carona, a eliminacao irreversivel
+      # de dado de cliente.
+      #
+      # Por isso o prazo e um segredo PROPRIO. Sem ele a rotina roda em modo
+      # seco: relata quantos registros passaram do prazo e nao altera nada.
+      # Quem quiser a varredura de verdade define LGPD_RETENCAO_MESES — que e
+      # tambem a decisao que a LGPD atribui ao controlador, e nao ao software.
+      - name: Verificar segredos
+        id: segredos
+        run: |
+          if [ -n "${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" ] && [ -n "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+            echo "presentes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "presentes=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Retencao pulada: configure os segredos em Settings > Secrets."
+          fi
+          if [ -n "${{ secrets.LGPD_RETENCAO_MESES }}" ]; then
+            echo "prazo=${{ secrets.LGPD_RETENCAO_MESES }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "prazo=" >> "$GITHUB_OUTPUT"
+            echo "::notice::LGPD_RETENCAO_MESES nao definido: rodando em modo seco, sem alterar nada."
+          fi
+
+      - name: Instalar dependencias
+        if: steps.segredos.outputs.presentes == 'true'
+        run: npm ci
+
+      - name: Rodar
+        if: steps.segredos.outputs.presentes == 'true'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "${{ steps.segredos.outputs.prazo }}" ] || [ "${{ inputs.seco }}" = "true" ]; then
+            npm run lgpd:reter -- --seco
+          else
+            npm run lgpd:reter -- ${{ steps.segredos.outputs.prazo }}
           fi

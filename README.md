@@ -506,8 +506,18 @@ npm run lgpd:reter 12       # outro prazo
 npm run lgpd:reter -- --seco # só relata, não altera
 ```
 
-Feito para ser agendado (cron mensal). O prazo é uma sugestão técnica: cabe
-ao controlador confirmar com base na finalidade declarada.
+Agendada em `.github/workflows/rotinas.yml`, no dia 1º de cada mês às 6h
+(São Paulo).
+
+**Ela roda em modo seco até você definir o prazo.** As outras duas rotinas só
+mandam mensagem: sem credencial de canal, nada sai. Esta **apaga** — e se
+dependesse apenas das chaves do Supabase, ligar o lembrete ligaria de carona
+a eliminação irreversível de dado de cliente.
+
+Por isso o prazo é um segredo próprio, `LGPD_RETENCAO_MESES`. Sem ele, a
+rotina relata quantos registros passaram do prazo e não altera nada. Isso
+também reflete a lei: o prazo é decisão do controlador com base na finalidade
+declarada, não do software.
 
 **Política pública** em `/privacidade`, rota aberta — o titular dos dados
 normalmente não tem conta no sistema. O texto é um ponto de partida escrito
@@ -778,17 +788,23 @@ Supabase Logs continua sendo o lugar das queries.
 
 ## Rotinas agendadas
 
-O sistema tem duas rotinas: o **lembrete da véspera** (uma vez por dia, fim
-da tarde) e o **resumo semanal** (segunda de manhã). Elas são scripts Node —
-e por um bom tempo foram *só* scripts: nada as executava, então em produção
-nunca rodaram. Publicar a aplicação não agenda nada.
+O sistema tem três rotinas: o **lembrete da véspera** (uma vez por dia, fim
+da tarde), o **resumo semanal** (segunda de manhã) e a **varredura de
+retenção da LGPD** (dia 1º de cada mês). Elas são scripts Node — e por um bom
+tempo foram *só* scripts: nada as executava, então em produção nunca rodaram.
+Publicar a aplicação não agenda nada.
 
 `.github/workflows/rotinas.yml` agenda as duas.
 
 ```
 0 21 * * *   →  18:00 em São Paulo, todo dia      →  lembrete da véspera
 0 11 * * 1   →  08:00 em São Paulo, segunda-feira →  resumo semanal
+0 9 1 * *    →  06:00 em São Paulo, dia 1º        →  retenção (LGPD)
 ```
+
+Um cron dispara o workflow **inteiro**, e cada job decide se é com ele. Por
+isso a condição de cada um cita o seu horário: perguntar apenas se veio de um
+agendamento faria o lembrete rodar também na segunda de manhã e no dia 1º.
 
 O cron do GitHub é UTC. O Brasil não tem mais horário de verão desde 2019,
 então São Paulo é UTC−3 o ano inteiro e essas contas não escorregam em março
