@@ -57,6 +57,7 @@ describe.skipIf(!rodar)('policies de escrita em agendamentos', () => {
     };
   }
 
+  // espelho: agendador cria na propria loja em nome proprio
   it('agendador cria agendamento na propria loja em nome proprio', async () => {
     const { data: franqueadoId } = await agendador.from('usuarios').select('franqueado_id').eq('id', idDoAgendador).single();
 
@@ -71,6 +72,7 @@ describe.skipIf(!rodar)('policies de escrita em agendamentos', () => {
     if (data?.id) criados.push(data.id);
   });
 
+  // espelho: agendador NAO cria em loja alheia
   it('agendador NAO cria agendamento em loja alheia', async () => {
     const { data: franqueadoId } = await agendador.from('usuarios').select('franqueado_id').eq('id', idDoAgendador).single();
 
@@ -84,6 +86,7 @@ describe.skipIf(!rodar)('policies de escrita em agendamentos', () => {
     expect(error?.code).toBe('42501');
   });
 
+  // espelho: agendador NAO lanca em nome de colega
   it('agendador NAO lanca agendamento em nome de outra pessoa', async () => {
     const { data: colegas } = await franqueado.from('usuarios').select('id').neq('id', idDoAgendador).limit(1);
     const { data: franqueadoId } = await agendador.from('usuarios').select('franqueado_id').eq('id', idDoAgendador).single();
@@ -97,6 +100,7 @@ describe.skipIf(!rodar)('policies de escrita em agendamentos', () => {
     expect(error?.code).toBe('42501');
   });
 
+  // espelho: agendador NAO apaga agendamento
   it('agendador NAO apaga agendamento, nem o que ele mesmo criou', async () => {
     const alvo = criados[0];
     expect(alvo).toBeTruthy();
@@ -111,6 +115,7 @@ describe.skipIf(!rodar)('policies de escrita em agendamentos', () => {
     expect(aindaExiste).toHaveLength(1);
   });
 
+  // espelho: franqueado apaga agendamento de qualquer loja
   it('franqueado apaga agendamento de qualquer loja do tenant', async () => {
     const { data: criado } = await franqueado
       .from('agendamentos')
@@ -140,6 +145,7 @@ describe.skipIf(!rodar)('policies de cadastro', () => {
     await agendador.encerrar();
   });
 
+  // espelho: agendador NAO cria loja
   it('agendador NAO cria loja', async () => {
     const { data: eu } = await agendador.auth.getUser();
     const { data: perfil } = await agendador.from('usuarios').select('franqueado_id').eq('id', eu.user!.id).single();

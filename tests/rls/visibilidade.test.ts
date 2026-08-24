@@ -25,6 +25,7 @@ describe.skipIf(!rodar)('lojas visiveis por papel', () => {
     await Promise.all(sessoes.map((sessao) => sessao.encerrar()));
   });
 
+  // espelho: franqueado ve todas as lojas
   it('franqueado enxerga as 9 lojas do tenant', async () => {
     const cliente = await abrir(CONTAS.franqueado);
     const { data, error } = await cliente.from('lojas').select('id, nome');
@@ -33,6 +34,7 @@ describe.skipIf(!rodar)('lojas visiveis por papel', () => {
     expect(data).toHaveLength(9);
   });
 
+  // espelho: diretor 1 ve lojas 1-5
   it('diretor 1 enxerga apenas as lojas 1 a 5, onde tem participacao ativa', async () => {
     const cliente = await abrir(CONTAS.diretor1);
     const { data, error } = await cliente.from('lojas').select('nome');
@@ -42,6 +44,7 @@ describe.skipIf(!rodar)('lojas visiveis por papel', () => {
     expect(numeros).toEqual([1, 2, 3, 4, 5]);
   });
 
+  // espelho: diretor 2 ve lojas 6-9
   it('diretor 2 enxerga apenas as lojas 6 a 9', async () => {
     const cliente = await abrir(CONTAS.diretor2);
     const { data } = await cliente.from('lojas').select('nome');
@@ -50,6 +53,7 @@ describe.skipIf(!rodar)('lojas visiveis por papel', () => {
     expect(numeros).toEqual([6, 7, 8, 9]);
   });
 
+  // espelho: agendador ve so a propria loja
   it('agendador enxerga somente a loja em que esta alocado', async () => {
     const cliente = await abrir(CONTAS.agendadorLoja1);
     const { data } = await cliente.from('lojas').select('nome');
@@ -58,6 +62,7 @@ describe.skipIf(!rodar)('lojas visiveis por papel', () => {
     expect(numeroDaLoja(data![0].nome)).toBe(1);
   });
 
+  // espelho: agendadores de lojas diferentes nao se cruzam
   it('agendadores de lojas diferentes nao se cruzam', async () => {
     const [um, nove] = await Promise.all([abrir(CONTAS.agendadorLoja1), abrir(CONTAS.agendadorLoja9)]);
 
@@ -86,16 +91,19 @@ describe.skipIf(!rodar)('agendamentos seguem as lojas permitidas', () => {
     return new Set((data ?? []).map((item) => item.loja_id));
   }
 
+  // espelho: agendamentos do agendador vem de uma loja so
   it('agendador so alcanca agendamentos da propria loja', async () => {
     const lojas = await lojasDosAgendamentos(CONTAS.agendadorLoja1);
     expect(lojas.size).toBeLessThanOrEqual(1);
   });
 
+  // espelho: diretor 1 ve lojas 1-5
   it('diretor alcanca no maximo as 5 lojas em que participa', async () => {
     const lojas = await lojasDosAgendamentos(CONTAS.diretor1);
     expect(lojas.size).toBeLessThanOrEqual(5);
   });
 
+  // espelho: franqueado ve todas as lojas
   it('franqueado alcanca agendamentos de todas as lojas', async () => {
     const lojas = await lojasDosAgendamentos(CONTAS.franqueado);
     expect(lojas.size).toBeGreaterThan(1);
@@ -106,6 +114,7 @@ describe.skipIf(!rodar)('agendamentos seguem as lojas permitidas', () => {
    * O RLS precisa devolver vazio, nao erro — e a diferenca entre "nao existe
    * para voce" e "existe mas voce nao pode", que ja e informacao demais.
    */
+  // espelho: pedir loja alheia devolve vazio, nao erro
   it('filtrar por loja alheia devolve vazio, nao dados', async () => {
     const franqueado = await entrarComo(CONTAS.franqueado);
     sessoes.push(franqueado);
@@ -134,11 +143,13 @@ describe.skipIf(!rodar)('usuarios e dados do tenant', () => {
     await Promise.all([franqueado.encerrar(), agendador.encerrar()]);
   });
 
+  // espelho: franqueado enxerga os 21 do tenant
   it('franqueado enxerga os 21 usuarios do tenant', async () => {
     const { data } = await franqueado.from('usuarios').select('id');
     expect((data ?? []).length).toBeGreaterThanOrEqual(21);
   });
 
+  // espelho: agendador ve colegas da loja, nao o tenant inteiro
   it('agendador enxerga a si mesmo e os colegas da propria loja, nao o tenant inteiro', async () => {
     const { data } = await agendador.from('usuarios').select('id, email');
 
@@ -154,11 +165,13 @@ describe.skipIf(!rodar)('usuarios e dados do tenant', () => {
    * (npm run verificar:banco) pegou a divergencia antes de alguem caçar um
    * bug inexistente.
    */
+  // espelho: agendador ve so o proprio franqueado
   it('agendador alcanca apenas o proprio franqueado, nunca outro', async () => {
     const { data } = await agendador.from('franqueados').select('id');
     expect((data ?? []).length).toBeLessThanOrEqual(1);
   });
 
+  // espelho: agendador nao ve participacoes
   it('agendador nao enxerga participacoes societarias alheias', async () => {
     const { data } = await agendador.from('participacoes_societarias').select('usuario_id');
     expect(data ?? []).toHaveLength(0);

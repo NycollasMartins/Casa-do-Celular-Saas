@@ -408,13 +408,17 @@ npm run verificar:banco
 
 Cria um banco descartável no PostgreSQL local, reproduz o que o Supabase
 fornece (schema `auth`, `auth.uid()`, os papéis), aplica **todas** as
-migrations na ordem, popula o seed e roda **75 asserções**:
+migrations na ordem, popula o seed e roda **76 asserções**:
 
-- **49 de RLS**, impersonando cada papel — inclusive a tentativa de escalada
-  de privilégio, que precisa ser barrada. Nove delas espelham afirmações de
-  `tests/rls/*.test.ts`, que dependem do PostgREST e nunca rodaram: uma
-  dessas afirmações já se mostrou errada, e conferir as demais aqui evita
-  que custem uma sessão de depuração quando finalmente rodarem.
+- **50 de RLS**, impersonando cada papel — inclusive a tentativa de escalada
+  de privilégio, que precisa ser barrada. **Todas** espelham afirmações de
+  `tests/rls/*.test.ts`, que dependem do PostgREST e nunca rodaram — a
+  correspondência é verificada por teste, não prometida em prosa.
+
+  Foi comparando as duas listas que apareceu uma escalada real: `super_admin`
+  não era mencionado em asserção nenhuma, e um franqueado conseguia se
+  promover a ele. Quando `npm run test:rls` é executado sem o seed, ele
+  explica por que pulou em vez de sair verde em silêncio.
 - **26 das funções e triggers SQL**, com dados de verdade: a anonimização limpa os
   campos pessoais e preserva loja e status para a métrica sobreviver; o
   lembrete não repete quem já recebeu mas permite nova tentativa depois de
@@ -444,7 +448,7 @@ de uma vez e que repara aplicação parcial. Nenhuma das duas estava
 verificada. Se fossem falsas, a descoberta viria no pior lugar possível —
 erro no meio da execução, em produção, sem transação para desfazer.
 
-Três cenários, e em todos as 75 asserções de comportamento precisam passar
+Três cenários, e em todos as 76 asserções de comportamento precisam passar
 no fim:
 
 - **Aplicação parcial**: schema, RLS e seed prontos, mais algumas migrations
@@ -458,7 +462,7 @@ no fim:
 
 `.github/workflows/ci.yml` roda a cada push na `main` e em cada pull request:
 checagem de tipos, lint, testes unitários, build de produção e — num
-container Postgres descartável — as 13 migrations com as 75 asserções de RLS
+container Postgres descartável — as 13 migrations com as 76 asserções de RLS
 e funções. É o que impede uma migration quebrada chegar ao SQL Editor. A Netlify
 publica a partir da `main`, então sem essa verificação um commit que quebra o
 build vai direto para produção e só aparece quando alguém abre o sistema.

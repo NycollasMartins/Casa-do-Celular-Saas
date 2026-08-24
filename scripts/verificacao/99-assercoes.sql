@@ -695,7 +695,22 @@ begin
   perform pg_temp.checar('franqueado AINDA promove a diretor', 'diretor', v_papel);
   update public.usuarios set role = 'agendador' where id = v_ag;
 
-  -- 5. E o insert, que ja era barrado antes desta migration.
+  -- 5. O agendador tentando o mesmo. Ele ja e barrado pela regra geral de
+  -- "papel nao muda", mas o papel mais alto do sistema merece assercao
+  -- propria: uma flexibilizacao futura poderia liberar algum papel e deixar
+  -- este junto por descuido.
+  perform set_config('request.jwt.claim.sub', v_ag::text, false);
+  set role authenticated;
+  begin
+    update public.usuarios set role = 'super_admin' where id = v_ag;
+  exception when others then null;
+  end;
+  reset role;
+  select role::text into v_papel from public.usuarios where id = v_ag;
+  perform pg_temp.checar('agendador NAO vira super admin', 'agendador', v_papel);
+  update public.usuarios set role = 'agendador' where id = v_ag;
+
+  -- 6. E o insert, que ja era barrado antes desta migration.
   perform set_config('request.jwt.claim.sub', v_dono::text, false);
   set role authenticated;
   declare v_erro text;

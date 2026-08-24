@@ -55,16 +55,63 @@ export async function entrarComo(email: string): Promise<ClienteAutenticado> {
  * Impede que alguem aponte o .env.local para producao e saia escrevendo.
  */
 export async function bancoEDeTeste(): Promise<boolean> {
-  if (!rlsConfigurado) return false;
+  if (!rlsConfigurado) {
+    avisar('faltam NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY');
+    return false;
+  }
 
   try {
     const cliente = await entrarComo(CONTAS.franqueado);
     const { data } = await cliente.from('usuarios').select('email').eq('email', CONTAS.agendadorLoja1);
     await cliente.encerrar();
-    return (data?.length ?? 0) > 0;
-  } catch {
+
+    if ((data?.length ?? 0) > 0) return true;
+
+    avisar('o banco responde, mas os usuarios do seed nao estao la');
+    return false;
+  } catch (excecao) {
+    avisar(excecao instanceof Error ? excecao.message : 'nao foi possivel autenticar');
     return false;
   }
+}
+
+/**
+ * Diz por que as suites vao se pular.
+ *
+ * POR QUE ISTO IMPORTA
+ * `npm run test:rls` sem seed imprime "25 skipped" e sai com codigo zero.
+ * Verde que nao testou nada e a pior forma de sinal: quem roda nao distingue
+ * "esta tudo certo" de "nada foi verificado", e o comando parece atestar uma
+ * seguranca que nao mediu.
+ *
+ * O modulo e carregado uma vez pelo Node, entao o aviso sai uma vez so, por
+ * mais suites que o importem.
+ */
+let jaAvisou = false;
+
+function avisar(motivo: string): void {
+  if (jaAvisou) return;
+  jaAvisou = true;
+
+  console.warn(
+    [
+      '',
+      '  ┌─ TESTES DE RLS PULADOS ' + '─'.repeat(38),
+      `  │  Motivo: ${motivo.replace(/\.$/, '')}.`,
+      '  │',
+      '  │  Estes testes autenticam como os usuarios do seed e conferem o',
+      '  │  RLS atraves do PostgREST. Sem o seed nao ha como autenticar.',
+      '  │',
+      '  │  Para rodar:  npm run seed:auth  (e a migration de seed)',
+      '  │',
+      '  │  O comportamento que eles cobrem tambem e verificado por',
+      '  │  `npm run verificar:banco`, direto no Postgres — aquele roda',
+      '  │  sempre, inclusive no CI. Nada aqui fica sem cobertura; o que',
+      '  │  se perde e a passagem pelo PostgREST e pelo GoTrue.',
+      '  └' + '─'.repeat(62),
+      '',
+    ].join('\n')
+  );
 }
 
 /** Nomes das lojas do seed sao 'Casa do Celular Loja N'. */

@@ -36,6 +36,7 @@ describe.skipIf(!rodar)('escalada de privilegio por auto-update', () => {
     await agendador.encerrar();
   });
 
+  // espelho: agendador NAO vira franqueado
   it('nao consegue promover a si mesmo a franqueado', async () => {
     const { error } = await agendador.from('usuarios').update({ role: 'franqueado' }).eq('id', meuId);
     expect(error).not.toBeNull();
@@ -44,6 +45,7 @@ describe.skipIf(!rodar)('escalada de privilegio por auto-update', () => {
     expect(depois?.role).toBe('agendador');
   });
 
+  // espelho: agendador NAO vira super admin
   it('nao consegue promover a si mesmo a super_admin', async () => {
     await agendador.from('usuarios').update({ role: 'super_admin' }).eq('id', meuId);
 
@@ -51,6 +53,7 @@ describe.skipIf(!rodar)('escalada de privilegio por auto-update', () => {
     expect(depois?.role).toBe('agendador');
   });
 
+  // espelho: agendador NAO troca de tenant
   it('nao consegue mudar de tenant trocando o franqueado_id', async () => {
     await agendador
       .from('usuarios')
@@ -61,6 +64,7 @@ describe.skipIf(!rodar)('escalada de privilegio por auto-update', () => {
     expect(depois?.franqueado_id).toBe(meuFranqueado);
   });
 
+  // espelho: inativo NAO se reativa sozinho
   it('nao consegue reativar o proprio acesso apos ser desligado', async () => {
     // Nao desliga de verdade: basta provar que a escrita na coluna e negada.
     const { error } = await agendador.from('usuarios').update({ status: 'inativo' }).eq('id', meuId);
@@ -70,6 +74,7 @@ describe.skipIf(!rodar)('escalada de privilegio por auto-update', () => {
     expect(depois?.status).toBe('ativo');
   });
 
+  // espelho: agendador AINDA edita o proprio nome
   it('continua podendo editar o proprio nome', async () => {
     const { data: antes } = await agendador.from('usuarios').select('nome').eq('id', meuId).single();
     const original = antes!.nome;
@@ -80,6 +85,7 @@ describe.skipIf(!rodar)('escalada de privilegio por auto-update', () => {
     await agendador.from('usuarios').update({ nome: original }).eq('id', meuId);
   });
 
+  // espelho: papel continua agendador
   it('a promocao nao vaza dados nem se a coluna fosse alterada', async () => {
     // Independente do caminho, o que importa e o efeito: uma loja visivel.
     const { data: lojas } = await agendador.from('lojas').select('id');
