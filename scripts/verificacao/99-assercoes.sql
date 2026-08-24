@@ -796,6 +796,110 @@ begin
   delete from auth.users where email in ('dono2@outro.com','ag2@outro.com');
 end $$;
 
+-- ============ isolamento entre tenants, tabela por tabela ============
+--
+-- POR QUE ISTO PRECISA EXISTIR
+-- As demais assercoes usam um tenant so — o do seed. Vazamento entre tenants
+-- nao aparece com um tenant: nao ha para onde vazar. Foi assim que
+-- `metas_write` ficou com `using (pode_gerenciar())` sem escopo, deixando um
+-- franqueado ver e APAGAR metas de outra rede, sem que nada acusasse.
+--
+-- Isolamento e a promessa central de um sistema multiempresa. Ele merece uma
+-- assercao por tabela, e nao a confianca de que cada policy foi escrita com
+-- cuidado.
+do $$
+declare
+  v_dono uuid; v_f2 uuid; v_dono2 uuid; v_ag2 uuid; v_loja2 uuid; v_agd2 uuid;
+  v_erro text;
+begin
+  select id into v_dono from auth.users where email = 'dono@franqueado.com.br';
+
+  -- Tenant B completo, montado como dono do banco.
+  insert into public.franqueados (nome, cnpj) values ('Tenant B','98798798798798')
+    returning id into v_f2;
+  insert into public.lojas (franqueado_id,nome,codigo_loja,estado,cidade)
+    values (v_f2,'Loja B','TB-1','RJ','Rio') returning id into v_loja2;
+  insert into auth.users (email) values ('donoB@b.com') returning id into v_dono2;
+  insert into public.usuarios (id,email,nome,role,franqueado_id)
+    values (v_dono2,'donoB@b.com','DonoB','franqueado',v_f2);
+  insert into auth.users (email) values ('agB@b.com') returning id into v_ag2;
+  insert into public.usuarios (id,email,nome,role,franqueado_id)
+    values (v_ag2,'agB@b.com','AgB','agendador',v_f2);
+  insert into public.agendadores_lojas (usuario_id,loja_id,data_inicio)
+    values (v_ag2,v_loja2,current_date);
+  insert into public.participacoes_societarias (usuario_id,loja_id,percentual_participacao,cargo,data_inicio)
+    values (v_dono2,v_loja2,100,'franqueado',current_date);
+  insert into public.agendamentos (franqueado_id,loja_id,agendador_id,cliente_nome,
+                                   cliente_cpf,cliente_telefone,data_agendamento,status)
+    values (v_f2,v_loja2,v_ag2,'Cliente B','52998224725','21999999999',current_date,'compareceu')
+    returning id into v_agd2;
+  insert into public.vendas (agendamento_id,valor,data_venda,registrada_por)
+    values (v_agd2,999,current_date,v_ag2);
+  insert into public.metas (usuario_id,competencia,meta_agendamentos,definida_por)
+    values (v_ag2,date_trunc('month',current_date)::date,50,v_dono2);
+  insert into public.notificacoes (agendamento_id,tipo,canal,status)
+    values (v_agd2,'vespera','email','enviada');
+  insert into public.envios_relatorio (franqueado_id,semana_inicio,status)
+    values (v_f2,(date_trunc('week',current_date))::date,'enviado');
+
+  perform set_config('request.jwt.claim.sub', v_dono::text, false);
+  set role authenticated;
+
+  -- Uma por tabela. Nenhuma linha do tenant B pode ser alcancada.
+  perform pg_temp.checar('tenant: nao ve franqueados alheios', '0',
+    (select count(*)::text from public.franqueados where id = v_f2));
+  perform pg_temp.checar('tenant: nao ve lojas alheias', '0',
+    (select count(*)::text from public.lojas where franqueado_id = v_f2));
+  perform pg_temp.checar('tenant: nao ve usuarios alheios', '0',
+    (select count(*)::text from public.usuarios where franqueado_id = v_f2));
+  perform pg_temp.checar('tenant: nao ve agendamentos alheios', '0',
+    (select count(*)::text from public.agendamentos where franqueado_id = v_f2));
+  perform pg_temp.checar('tenant: nao ve lotacoes alheias', '0',
+    (select count(*)::text from public.agendadores_lojas where loja_id = v_loja2));
+  perform pg_temp.checar('tenant: nao ve participacoes alheias', '0',
+    (select count(*)::text from public.participacoes_societarias where loja_id = v_loja2));
+  perform pg_temp.checar('tenant: nao ve vendas alheias', '0',
+    (select count(*)::text from public.vendas where agendamento_id = v_agd2));
+  perform pg_temp.checar('tenant: nao ve metas alheias', '0',
+    (select count(*)::text from public.metas where usuario_id = v_ag2));
+  perform pg_temp.checar('tenant: nao ve notificacoes alheias', '0',
+    (select count(*)::text from public.notificacoes where agendamento_id = v_agd2));
+  perform pg_temp.checar('tenant: nao ve envios de relatorio alheios', '0',
+    (select count(*)::text from public.envios_relatorio where franqueado_id = v_f2));
+
+  -- E nao escreve na rede alheia. O trigger de tenant cobre o vinculo; aqui
+  -- o alvo e o agendamento, que passa pelo validar_tenant_agendamento.
+  begin
+    insert into public.agendamentos (franqueado_id,loja_id,agendador_id,cliente_nome,
+                                     cliente_cpf,cliente_telefone,data_agendamento,status)
+    values (v_f2,v_loja2,v_ag2,'Invasor','52998224725','11999999999',current_date,'agendado');
+    v_erro := 'nao barrou';
+  exception when others then v_erro := 'barrou';
+  end;
+  perform pg_temp.checar('tenant: NAO cria agendamento na rede alheia', 'barrou', v_erro);
+
+  -- Update em loja alheia: o RLS filtra a linha, entao o efeito e zero.
+  begin
+    update public.lojas set nome = 'Tomada' where id = v_loja2;
+  exception when others then null;
+  end;
+  reset role;
+  perform pg_temp.checar('tenant: NAO renomeia loja alheia', 'Loja B',
+    (select nome from public.lojas where id = v_loja2));
+
+  delete from public.envios_relatorio where franqueado_id=v_f2;
+  delete from public.notificacoes where agendamento_id=v_agd2;
+  delete from public.metas where usuario_id=v_ag2;
+  delete from public.vendas where agendamento_id=v_agd2;
+  delete from public.agendamentos where franqueado_id=v_f2;
+  delete from public.participacoes_societarias where loja_id=v_loja2;
+  delete from public.agendadores_lojas where loja_id=v_loja2;
+  delete from public.usuarios where franqueado_id=v_f2;
+  delete from public.lojas where franqueado_id=v_f2;
+  delete from public.franqueados where id=v_f2;
+  delete from auth.users where email in ('donoB@b.com','agB@b.com');
+end $$;
+
 -- Desfaz o que as asserçoes escreveram, para poderem rodar de novo.
 reset role;
 delete from public.vendas where valor in (1500.50, 200, 100);
