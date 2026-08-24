@@ -107,19 +107,57 @@ describe('quem usa qual guarda', () => {
     expect(arquivos.filter((a) => !permitidos.includes(a))).toEqual([]);
   });
 
+  /**
+   * Confere CADA acao exportada, nao o arquivo.
+   *
+   * A primeira versao perguntava se `usuarioComAcesso` aparecia no arquivo.
+   * `cadastros.ts` tem dez acoes: bastava uma delas usar a guarda para as
+   * outras nove passarem. Verificado com uma acao nova que apagava loja por
+   * id, sem autenticacao nenhuma — o teste ficou verde.
+   *
+   * E a trava mais consequente que escrevi, e era a mais fraca.
+   */
+  const SEM_SESSAO: Record<string, string> = {
+    entrar: 'e o que cria a sessao',
+    sair: 'encerra a sessao; exigir uma seria circular',
+    enviarLinkDeRecuperacao: 'quem esqueceu a senha nao esta logado',
+    definirNovaSenha: 'confere a sessao por conta propria, com getUser',
+  };
+
   it('toda Server Action passa por usuarioComAcesso', () => {
     const acoes = execSync("find app/actions -name '*.ts'", { encoding: 'utf8' })
       .trim()
       .split('\n')
       .filter(Boolean);
 
-    const semGuarda = acoes.filter((caminho) => {
-      const fonte = readFileSync(caminho, 'utf8');
-      // auth.ts trata login e troca de senha: nao ha usuario logado ainda.
-      if (!fonte.includes('usuarioComAcesso') && !caminho.endsWith('auth.ts')) return true;
-      return false;
-    });
+    const desprotegidas: string[] = [];
 
-    expect(semGuarda).toEqual([]);
+    for (const caminho of acoes) {
+      const fonte = readFileSync(caminho, 'utf8');
+      const blocos = fonte.split(/export async function /).slice(1);
+
+      for (const bloco of blocos) {
+        const nome = bloco.slice(0, bloco.indexOf('(')).trim();
+        if (nome in SEM_SESSAO) continue;
+        if (!bloco.includes('usuarioComAcesso')) desprotegidas.push(`${caminho}: ${nome}`);
+      }
+    }
+
+    expect(desprotegidas).toEqual([]);
+  });
+
+  it('nao ha isencao orfa', () => {
+    const fontes = execSync("find app/actions -name '*.ts'", { encoding: 'utf8' })
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((c) => readFileSync(c, 'utf8'))
+      .join('\n');
+
+    const orfas = Object.keys(SEM_SESSAO).filter(
+      (nome) => !fontes.includes(`export async function ${nome}(`)
+    );
+
+    expect(orfas).toEqual([]);
   });
 });

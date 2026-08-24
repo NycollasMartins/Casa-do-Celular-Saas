@@ -169,13 +169,7 @@ export async function deletarAgendamento(id: string): Promise<ResultadoAction> {
 }
 
 /** Metricas do dashboard (usada tambem pelos filtros client-side). */
-export async function buscarMetricas(filtros: FiltroMetricas = {}) {
-  return calcularMetricas(filtros);
-}
 
-export async function listarLojasDoUsuario() {
-  return buscarLojasDoUsuario();
-}
 
 /* ------------------------------- LGPD -------------------------------- */
 
