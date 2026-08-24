@@ -42,6 +42,7 @@ import { hojeNaLoja } from '@/lib/semana';
 import type { AgendamentoComRelacoes, AgendamentoStatus, UserRole, Venda } from '@/lib/types/database';
 import { VendaForm } from '@/components/forms/venda-form';
 import { formatarBrl } from '@/lib/dinheiro';
+import { gerarCsv } from '@/lib/csv';
 
 const ITENS_POR_PAGINA = 50;
 const TODOS = 'todos';
@@ -132,24 +133,37 @@ export function AgendamentosTable({
   }
 
   function exportarCsv() {
-    const cabecalho = ['Cliente', 'CPF', 'Telefone', 'Loja', 'Data', 'Status', 'Agendador', 'Observacoes'];
-    const linhas = filtrados.map((item) => [
-      item.cliente_nome,
-      item.cliente_cpf,
-      item.cliente_telefone,
-      item.loja?.nome ?? '',
-      formatarDataIso(item.data_agendamento),
-      STATUS_LABEL[item.status],
-      item.agendador?.nome ?? '',
-      (item.observacoes ?? '').replace(/[\r\n]+/g, ' '),
-    ]);
+    // Usa lib/csv.ts, e nao um CSV montado aqui.
+    //
+    // A versao anterior escapava aspas e mais nada. Aspas resolvem a ANALISE
+    // do arquivo, nao a avaliacao da formula: uma celula que comeca com = + -
+    // ou @ e executada pelo Excel ao abrir, mesmo entre aspas. Como
+    // `cliente_nome` e `observacoes` vem digitados por quem atende, um
+    // cliente chamado `=HYPERLINK(...)` viraria codigo rodando na maquina de
+    // quem abriu a planilha.
+    //
+    // O modulo compartilhado ja trata isso, alem do BOM, do ponto e virgula e
+    // do CRLF que o Excel em portugues espera.
+    const csv = gerarCsv<AgendamentoComRelacoes>(
+      [
+        { cabecalho: 'Cliente', valor: (item) => item.cliente_nome },
+        { cabecalho: 'CPF', valor: (item) => item.cliente_cpf },
+        { cabecalho: 'Telefone', valor: (item) => item.cliente_telefone },
+        { cabecalho: 'Loja', valor: (item) => item.loja?.nome ?? '' },
+        { cabecalho: 'Data', valor: (item) => formatarDataIso(item.data_agendamento) },
+        { cabecalho: 'Status', valor: (item) => STATUS_LABEL[item.status] },
+        { cabecalho: 'Agendador', valor: (item) => item.agendador?.nome ?? '' },
+        {
+          cabecalho: 'Observacoes',
+          // A quebra de linha some porque a coluna e livre e uma observacao de
+          // duas linhas viraria duas linhas na planilha.
+          valor: (item) => (item.observacoes ?? '').replace(/[\r\n]+/g, ' '),
+        },
+      ],
+      filtrados
+    );
 
-    // Aspas duplicadas evitam quebra quando o texto contem ';' ou '"'.
-    const csv = [cabecalho, ...linhas]
-      .map((linha) => linha.map((celula) => `"${String(celula).replace(/"/g, '""')}"`).join(';'))
-      .join('\n');
-
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -158,7 +172,6 @@ export function AgendamentosTable({
     link.download = `agendamentos-${hojeNaLoja()}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-    toast.success(`${filtrados.length} agendamentos exportados.`);
   }
 
   function confirmarExclusao() {

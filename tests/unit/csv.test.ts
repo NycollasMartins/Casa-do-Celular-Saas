@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { gerarCsv, nomeDoArquivo, type ColunaCsv } from '@/lib/csv';
+import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 interface Linha {
   nome: string;
@@ -91,5 +93,56 @@ describe('gerarCsv', () => {
 describe('nomeDoArquivo', () => {
   it('carrega o periodo no nome, para nao virar "relatorio (3).csv"', () => {
     expect(nomeDoArquivo('lojas', '2026-08-01', '2026-08-20')).toBe('lojas_2026-08-01_a_2026-08-20.csv');
+  });
+});
+
+describe('nenhum CSV montado a mao', () => {
+  /**
+   * Havia DUAS geracoes de CSV no projeto. A da rota `/api/relatorios/export`
+   * usa este modulo; a da tabela de agendamentos montava o arquivo na mao e
+   * escapava apenas aspas.
+   *
+   * Aspas resolvem a ANALISE do arquivo, nao a avaliacao da formula: uma
+   * celula que comeca com = + - ou @ e executada pelo Excel ao abrir, mesmo
+   * entre aspas. E a exportacao da tabela leva `cliente_nome` e
+   * `observacoes`, que sao digitados por quem atende.
+   *
+   * O teste procura quem cria um arquivo CSV sem passar por aqui.
+   */
+  const arquivos = execSync(
+    "grep -rl \"text/csv\" app components lib --include='*.ts' --include='*.tsx' || true",
+    { encoding: 'utf8' }
+  )
+    .trim()
+    .split('\n')
+    .filter(Boolean);
+
+  it('encontrou quem gera CSV', () => {
+    expect(arquivos.length).toBeGreaterThan(0);
+  });
+
+  it.each(arquivos)('%s usa gerarCsv', (caminho) => {
+    expect(readFileSync(caminho, 'utf8')).toContain('gerarCsv');
+  });
+});
+
+describe('a neutralizacao cobre o que o Excel executa', () => {
+  const gatilhos = ['=', '+', '-', '@'];
+
+  it.each(gatilhos)('prefixo %s vira texto', (gatilho) => {
+    const linha = gerarCsv([{ cabecalho: 'Cliente', valor: (l: { n: string }) => l.n }], [
+      { n: `${gatilho}HYPERLINK("http://x","y")` },
+    ]).split('\r\n')[1];
+
+    // O apostrofo antes do gatilho e o que faz o Excel ler como texto.
+    expect(linha.replace(/^"/, '')).toMatch(/^'/);
+  });
+
+  it('nome comum nao ganha apostrofo', () => {
+    const linha = gerarCsv([{ cabecalho: 'Cliente', valor: (l: { n: string }) => l.n }], [
+      { n: 'Ana Maria' },
+    ]).split('\r\n')[1];
+
+    expect(linha).toBe('Ana Maria');
   });
 });
