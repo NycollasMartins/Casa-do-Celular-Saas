@@ -14,8 +14,7 @@
  * Usa a API REST do Upstash via fetch, sem SDK: sao duas chamadas em
  * pipeline e evita mais uma dependencia no bundle.
  */
-const JANELA_MS = 60_000;
-const JANELA_S = 60;
+const JANELA_PADRAO_S = 60;
 const LIMITE_PADRAO = 100;
 
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
@@ -68,15 +67,15 @@ function conterCrescimento(): void {
   }
 }
 
-function verificarEmMemoria(chave: string, limite: number): ResultadoRateLimit {
+function verificarEmMemoria(chave: string, limite: number, janelaS: number): ResultadoRateLimit {
   conterCrescimento();
 
   const agora = Date.now();
   const registro = contadores.get(chave);
 
   if (!registro || registro.expiraEm <= agora) {
-    contadores.set(chave, { total: 1, expiraEm: agora + JANELA_MS });
-    return { permitido: true, restante: limite - 1, resetEmSegundos: JANELA_S, origem: 'memoria' };
+    contadores.set(chave, { total: 1, expiraEm: agora + janelaS * 1000 });
+    return { permitido: true, restante: limite - 1, resetEmSegundos: janelaS, origem: 'memoria' };
   }
 
   registro.total++;
@@ -96,7 +95,11 @@ function verificarEmMemoria(chave: string, limite: number): ResultadoRateLimit {
  * so marca a validade na primeira requisicao da janela, para o prazo nao
  * ser empurrado a cada acesso.
  */
-async function verificarNoUpstash(chave: string, limite: number): Promise<ResultadoRateLimit> {
+async function verificarNoUpstash(
+  chave: string,
+  limite: number,
+  janelaS: number
+): Promise<ResultadoRateLimit> {
   const resposta = await fetch(`${UPSTASH_URL}/pipeline`, {
     method: 'POST',
     headers: {
@@ -105,7 +108,7 @@ async function verificarNoUpstash(chave: string, limite: number): Promise<Result
     },
     body: JSON.stringify([
       ['INCR', chave],
-      ['EXPIRE', chave, String(JANELA_S), 'NX'],
+      ['EXPIRE', chave, String(janelaS), 'NX'],
       ['TTL', chave],
     ]),
     cache: 'no-store',
@@ -118,29 +121,40 @@ async function verificarNoUpstash(chave: string, limite: number): Promise<Result
   if (erro) throw new Error(erro);
 
   const total = Number(retorno[0]?.result ?? 0);
-  const ttl = Number(retorno[2]?.result ?? JANELA_S);
+  const ttl = Number(retorno[2]?.result ?? janelaS);
 
   return {
     permitido: total <= limite,
     restante: Math.max(0, limite - total),
     // TTL negativo significa chave sem expiracao definida; cai na janela cheia.
-    resetEmSegundos: ttl > 0 ? ttl : JANELA_S,
+    resetEmSegundos: ttl > 0 ? ttl : janelaS,
     origem: 'upstash',
   };
 }
 
 /* -------------------------------- API -------------------------------- */
 
-export async function verificarRateLimit(chave: string, limite = LIMITE_PADRAO): Promise<ResultadoRateLimit> {
-  if (!rateLimitDistribuido) return verificarEmMemoria(chave, limite);
+/**
+ * `janelaS` existe por causa do envio de e-mail. Uma janela de um minuto
+ * limita mal o "esqueci a senha": tres por minuto ainda sao cento e oitenta
+ * por hora, o suficiente para queimar a cota de SMTP do projeto e deixar
+ * TODO MUNDO sem conseguir recuperar senha. Para esse caso a janela precisa
+ * ser de minutos, nao de segundos.
+ */
+export async function verificarRateLimit(
+  chave: string,
+  limite = LIMITE_PADRAO,
+  janelaS = JANELA_PADRAO_S
+): Promise<ResultadoRateLimit> {
+  if (!rateLimitDistribuido) return verificarEmMemoria(chave, limite, janelaS);
 
   try {
-    return await verificarNoUpstash(chave, limite);
+    return await verificarNoUpstash(chave, limite, janelaS);
   } catch (excecao) {
     // Redis fora do ar nao pode derrubar o sistema inteiro: degrada para o
     // contador local, que ainda barra o caso mais grosseiro.
     console.error('[rate-limit] Upstash indisponivel, usando memoria:', excecao);
-    return verificarEmMemoria(chave, limite);
+    return verificarEmMemoria(chave, limite, janelaS);
   }
 }
 
