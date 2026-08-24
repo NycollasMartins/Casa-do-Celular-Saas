@@ -15,6 +15,7 @@ import {
 } from '@/lib/supabase/queries';
 import { lerFiltros, type ParametrosBusca } from '@/lib/filtros';
 import { ROLE_LABEL } from '@/lib/utils';
+import { PrimeirosPassos } from '@/components/dashboard/primeiros-passos';
 
 export const metadata = { title: 'Visao geral · Casa do Celular' };
 
@@ -83,18 +84,24 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pa
             {ROLE_LABEL[usuario.role]} ·{' '}
             {filtros.lojaId
               ? lojas.find((loja) => loja.id === filtros.lojaId)?.nome ?? 'Loja'
-              : `${lojas.length} ${lojas.length === 1 ? 'loja' : 'lojas'}`}
+              : lojas.length === 0
+                ? 'nenhuma loja ainda'
+                : `${lojas.length} ${lojas.length === 1 ? 'loja' : 'lojas'}`}
           </p>
         </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <LojaSelector lojas={lojas} role={usuario.role} lojaSelecionada={filtros.lojaId} />
-          <PeriodoSelector
-            periodo={filtros.periodo ?? '30d'}
-            dataInicio={filtros.dataInicio}
-            dataFim={filtros.dataFim}
-          />
-        </div>
+        {/* Filtro sobre nada e ruido: sem loja, o dropdown abre vazio e o
+            periodo recorta um conjunto que nao existe. */}
+        {lojas.length > 0 ? (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <LojaSelector lojas={lojas} role={usuario.role} lojaSelecionada={filtros.lojaId} />
+            <PeriodoSelector
+              periodo={filtros.periodo ?? '30d'}
+              dataInicio={filtros.dataInicio}
+              dataFim={filtros.dataFim}
+            />
+          </div>
+        ) : null}
       </div>
 
       {/* A policy sempre permitiu o agendador ler a propria meta; faltava
@@ -105,24 +112,34 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pa
         </Suspense>
       ) : null}
 
-      <Suspense
-        key={JSON.stringify(filtros)}
-        fallback={
-          <>
-            <MetricsCardsSkeleton />
-            <ChartsSkeleton />
-          </>
-        }
-      >
-        <Indicadores filtros={filtros} />
-      </Suspense>
+      {/* Sem loja alcancavel nao ha o que indicar. Antes esta area exibia
+          zeros e a tabela sugeria "ajuste o periodo" — que aponta para o lugar
+          errado: o que falta e o primeiro cadastro, e sem loja nem da para
+          registrar atendimento. */}
+      {lojas.length === 0 ? (
+        <PrimeirosPassos role={usuario.role} />
+      ) : (
+        <>
+          <Suspense
+            key={JSON.stringify(filtros)}
+            fallback={
+              <>
+                <MetricsCardsSkeleton />
+                <ChartsSkeleton />
+              </>
+            }
+          >
+            <Indicadores filtros={filtros} />
+          </Suspense>
 
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-ink">Agendamentos do periodo</h2>
-        <Suspense key={`tabela-${JSON.stringify(filtros)}`} fallback={<AgendamentosTableSkeleton />}>
-          <Tabela filtros={filtros} role={usuario.role} />
-        </Suspense>
-      </section>
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold text-ink">Agendamentos do periodo</h2>
+            <Suspense key={`tabela-${JSON.stringify(filtros)}`} fallback={<AgendamentosTableSkeleton />}>
+              <Tabela filtros={filtros} role={usuario.role} />
+            </Suspense>
+          </section>
+        </>
+      )}
     </div>
   );
 }

@@ -234,8 +234,10 @@ export async function gerarSenhaProvisoria(id: string): Promise<ResultadoAction>
 
   const { error } = await admin.auth.admin.updateUserById(id, {
     password: senhaProvisoria,
-    // `nome` e reescrito junto porque o update de user_metadata substitui o
-    // objeto inteiro; omitir apagaria o nome de quem aparece no cabecalho.
+    // `nome` vai junto por precaucao: nao esta documentado se o GoTrue mescla
+    // ou substitui o user_metadata neste update, e reescrever custa nada.
+    // Hoje nada le esse `nome` — a aplicacao usa o de public.usuarios —, mas
+    // depender disso seria depender de duas coisas ao mesmo tempo.
     user_metadata: { nome: alvo.data.nome, senha_provisoria: true },
   });
 
