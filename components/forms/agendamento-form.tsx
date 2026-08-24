@@ -11,7 +11,12 @@ import { MensagemErro } from '@/components/ui/campo';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
-import { agendamentoSchema, novoAgendamentoSchema, STATUS_AGENDAMENTO } from '@/lib/validations/agendamento';
+import {
+  agendamentoAnonimizadoSchema,
+  agendamentoSchema,
+  novoAgendamentoSchema,
+  STATUS_AGENDAMENTO,
+} from '@/lib/validations/agendamento';
 import type { AgendamentoInput } from '@/lib/validations/agendamento';
 import { criarAgendamento, atualizarAgendamento } from '@/app/actions/agendamentos';
 import { STATUS_LABEL, mascararCpf, mascararTelefone } from '@/lib/utils';
@@ -33,6 +38,10 @@ interface Props {
 export function AgendamentoForm({ role, lojas, agendamento }: Props) {
   const router = useRouter();
   const edicao = Boolean(agendamento);
+  // Os dados pessoais deste registro ja foram eliminados a pedido do titular.
+  // Restam loja, data e status, que nao identificam ninguem — e sao o dado
+  // que o sistema existe para medir.
+  const anonimizado = Boolean(agendamento?.anonimizado_em);
   const lojaFixa = role === 'agendador' || lojas.length === 1;
 
   const {
@@ -43,7 +52,13 @@ export function AgendamentoForm({ role, lojas, agendamento }: Props) {
     watch,
     formState: { errors, isSubmitting },
   } = useForm<AgendamentoInput>({
-    resolver: zodResolver(edicao ? agendamentoSchema : novoAgendamentoSchema),
+    // Registro anonimizado nao passa pelo schema completo: o CPF guarda o
+    // marcador '000.000.000-00', que `validarCpf` recusa — e deve recusar.
+    // Sem esta distincao o formulario travava com "CPF invalido" num campo
+    // que ninguem deve corrigir.
+    resolver: zodResolver(
+      anonimizado ? agendamentoAnonimizadoSchema : edicao ? agendamentoSchema : novoAgendamentoSchema
+    ),
     defaultValues: {
       cliente_nome: agendamento?.cliente_nome ?? '',
       cliente_email: agendamento?.cliente_email ?? '',
@@ -84,6 +99,15 @@ export function AgendamentoForm({ role, lojas, agendamento }: Props) {
   return (
     <Card>
       <CardContent className="pt-5">
+        {anonimizado ? (
+          <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            <strong className="font-medium text-ink">Dados pessoais eliminados.</strong> Este
+            atendimento atendeu a um pedido do titular, e nome, CPF, telefone e observacoes foram
+            removidos — nao da para restaura-los. Data e situacao continuam editaveis, porque nao
+            identificam ninguem e alimentam os indicadores.
+          </div>
+        ) : null}
+
         <form onSubmit={handleSubmit(aoEnviar)} className="grid grid-cols-1 gap-5 sm:grid-cols-2" noValidate>
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="cliente_nome">Nome do cliente</Label>
@@ -94,6 +118,7 @@ export function AgendamentoForm({ role, lojas, agendamento }: Props) {
               aria-describedby={errors.cliente_nome ? 'cliente_nome-erro' : undefined}
               placeholder="Maria da Silva"
               {...register('cliente_nome')}
+              disabled={anonimizado}
             />
             <MensagemErro id="cliente_nome" mensagem={errors.cliente_nome?.message} />
           </div>
@@ -107,6 +132,7 @@ export function AgendamentoForm({ role, lojas, agendamento }: Props) {
               aria-invalid={Boolean(errors.cliente_cpf)}
               aria-describedby={errors.cliente_cpf ? 'cliente_cpf-erro' : undefined}
               {...register('cliente_cpf')}
+              disabled={anonimizado}
               onChange={(evento) => setValue('cliente_cpf', mascararCpf(evento.target.value))}
             />
             <MensagemErro id="cliente_cpf" mensagem={errors.cliente_cpf?.message} />
@@ -121,6 +147,7 @@ export function AgendamentoForm({ role, lojas, agendamento }: Props) {
               aria-invalid={Boolean(errors.cliente_telefone)}
               aria-describedby={errors.cliente_telefone ? 'cliente_telefone-erro' : undefined}
               {...register('cliente_telefone')}
+              disabled={anonimizado}
               onChange={(evento) => setValue('cliente_telefone', mascararTelefone(evento.target.value))}
             />
             <MensagemErro id="cliente_telefone" mensagem={errors.cliente_telefone?.message} />
@@ -135,6 +162,7 @@ export function AgendamentoForm({ role, lojas, agendamento }: Props) {
               aria-invalid={Boolean(errors.cliente_email)}
               aria-describedby={errors.cliente_email ? 'cliente_email-erro' : undefined}
               {...register('cliente_email')}
+              disabled={anonimizado}
             />
             <MensagemErro id="cliente_email" mensagem={errors.cliente_email?.message} />
           </div>
@@ -208,6 +236,7 @@ export function AgendamentoForm({ role, lojas, agendamento }: Props) {
               maxLength={500}
               placeholder="Preferencia de horario, modelo procurado, etc."
               {...register('observacoes')}
+              disabled={anonimizado}
             />
             <MensagemErro id="observacoes" mensagem={errors.observacoes?.message} />
           </div>

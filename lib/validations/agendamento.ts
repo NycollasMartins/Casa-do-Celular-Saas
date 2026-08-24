@@ -94,4 +94,25 @@ export const vendaSchema = z.object({
   data_venda: z.string().refine(ehDataIso, 'Use uma data no formato AAAA-MM-DD'),
 });
 
+/**
+ * Edicao de um agendamento ja anonimizado.
+ *
+ * Depois de atender ao pedido do titular, `cliente_cpf` vale
+ * '000.000.000-00' — que `validarCpf` recusa, e com razao: e o marcador, nao
+ * um CPF. O efeito era que o registro nao podia mais ser salvo, e o erro
+ * apontava para o CPF, um campo que ninguem deve corrigir; corrigir desfaria
+ * a anonimizacao.
+ *
+ * Aqui sobram os campos que NAO identificam ninguem. E o que o art. 12 da
+ * LGPD permite manter: loja, data e status seguem sendo o dado que o sistema
+ * existe para medir.
+ */
+export const agendamentoAnonimizadoSchema = agendamentoSchema.pick({
+  data_agendamento: true,
+  status: true,
+  loja_id: true,
+});
+
+export type AgendamentoAnonimizadoInput = z.infer<typeof agendamentoAnonimizadoSchema>;
+
 export type VendaInput = z.infer<typeof vendaSchema>;

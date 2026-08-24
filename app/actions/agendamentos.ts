@@ -3,7 +3,7 @@
 import { revalidar as revalidarTelas } from '@/lib/revalidacao';
 import { createClient } from '@/lib/supabase/server';
 import { usuarioComAcesso, podeGerenciarCadastros } from '@/lib/auth/session';
-import { agendamentoSchema, novoAgendamentoSchema, vendaSchema } from '@/lib/validations/agendamento';
+import { agendamentoSchema, novoAgendamentoSchema, vendaSchema, agendamentoAnonimizadoSchema } from '@/lib/validations/agendamento';
 import { calcularMetricas, buscarLojasDoUsuario, lerPaginado } from '@/lib/supabase/queries';
 import type { FiltroMetricas } from '@/lib/types/metricas';
 import { camposAnonimizados, normalizarCpfParaBusca } from '@/lib/lgpd';
@@ -110,22 +110,61 @@ export async function atualizarAgendamento(id: string, formData: FormData): Prom
   const usuario = await usuarioComAcesso();
   if (!usuario) return { sucesso: false, mensagem: 'Sessao expirada. Entre novamente.' };
 
+  const supabase = createClient();
+
+  const { data: existente } = await supabase
+    .from('agendamentos')
+    .select('id, loja_id, anonimizado_em')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (!existente) return { sucesso: false, mensagem: 'Agendamento nao encontrado ou sem permissao.' };
+
+  // REGISTRO ANONIMIZADO SEGUE OUTRO CAMINHO.
+  //
+  // Depois de atender ao pedido do titular, `cliente_cpf` guarda o marcador
+  // '000.000.000-00', que `validarCpf` recusa — e deve recusar. O registro
+  // ficava impossivel de salvar, com o erro apontando para o CPF, um campo
+  // que ninguem deve corrigir.
+  //
+  // E se a validacao passasse, seria pior: o update gravava os campos
+  // pessoais vindos do formulario, reintroduzindo dado que a LGPD obriga a
+  // ter eliminado. Hoje isso e barrado por acidente, pela validacao. Aqui
+  // passa a ser barrado de proposito — os campos pessoais nem entram no
+  // update.
+  if (existente.anonimizado_em) {
+    const parcial = agendamentoAnonimizadoSchema.safeParse(extrair(formData));
+    if (!parcial.success) {
+      return {
+        sucesso: false,
+        mensagem: 'Revise os campos destacados.',
+        erros: parcial.error.flatten().fieldErrors,
+      };
+    }
+
+    const { error: erroParcial } = await supabase
+      .from('agendamentos')
+      .update({
+        data_agendamento: parcial.data.data_agendamento,
+        status: parcial.data.status,
+      })
+      .eq('id', id);
+
+    if (erroParcial) {
+      return { sucesso: false, mensagem: `Nao foi possivel atualizar: ${erroParcial.message}` };
+    }
+
+    revalidar();
+    return { sucesso: true, mensagem: 'Agendamento atualizado.', id };
+  }
+
   // Na edicao a data pode ser passada (marcar comparecimento retroativo).
   const parsed = agendamentoSchema.safeParse(extrair(formData));
   if (!parsed.success) {
     return { sucesso: false, mensagem: 'Revise os campos destacados.', erros: parsed.error.flatten().fieldErrors };
   }
 
-  const supabase = createClient();
   const dados = parsed.data;
-
-  const { data: existente } = await supabase
-    .from('agendamentos')
-    .select('id, loja_id')
-    .eq('id', id)
-    .maybeSingle();
-
-  if (!existente) return { sucesso: false, mensagem: 'Agendamento nao encontrado ou sem permissao.' };
 
   const { error } = await supabase
     .from('agendamentos')

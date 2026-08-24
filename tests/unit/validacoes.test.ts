@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { mascararCpf, mascararTelefone, validarCpf } from '@/lib/utils';
-import { agendamentoSchema, novoAgendamentoSchema, vendaSchema } from '@/lib/validations/agendamento';
+import { agendamentoSchema, novoAgendamentoSchema, vendaSchema, agendamentoAnonimizadoSchema } from '@/lib/validations/agendamento';
 import { hojeNaLoja } from '@/lib/semana';
 import { novaSenhaSchema } from '@/lib/validations/auth';
 import { metaSchema, participacaoSchema } from '@/lib/validations/cadastros';
+
+const UUID_LOJA = '11111111-1111-4111-8111-111111111111';
 
 describe('validarCpf', () => {
   it('aceita CPFs com digito verificador correto', () => {
@@ -222,5 +224,57 @@ describe('campos de data nos schemas', () => {
     it.each(DATAS_RUINS)('recusa %s (%s)', (valor) => {
       expect(participacaoSchema.safeParse(montar(valor)).success).toBe(false);
     });
+  });
+});
+
+describe('edicao de agendamento anonimizado', () => {
+  /**
+   * Depois de atender ao pedido do titular, `cliente_cpf` guarda o marcador
+   * '000.000.000-00'. `validarCpf` recusa esse valor — e deve recusar, senao
+   * qualquer um cadastraria um CPF de digitos repetidos como se fosse real.
+   *
+   * O efeito era que o registro anonimizado ficava impossivel de salvar, com
+   * o erro apontando para o CPF: um campo que ninguem deve corrigir, porque
+   * corrigir desfaria a anonimizacao.
+   */
+  const ANONIMO = { data_agendamento: '2026-08-10', status: 'compareceu' as const, loja_id: UUID_LOJA };
+
+  it('o marcador de CPF e mesmo recusado pelo validador', () => {
+    // Se um dia passar a ser aceito, este teste avisa antes de alguem
+    // "consertar" o schema pelo lado errado.
+    expect(validarCpf('000.000.000-00')).toBe(false);
+  });
+
+  it('o schema completo trava no registro anonimizado', () => {
+    const completo = agendamentoSchema.safeParse({
+      ...ANONIMO,
+      cliente_nome: 'Cliente anonimizado',
+      cliente_cpf: '000.000.000-00',
+      cliente_telefone: '(00) 00000-0000',
+    });
+
+    expect(completo.success).toBe(false);
+  });
+
+  it('o schema do anonimizado aceita, com os campos que restam', () => {
+    expect(agendamentoAnonimizadoSchema.safeParse(ANONIMO).success).toBe(true);
+  });
+
+  it('e nao aceita campo pessoal de volta', () => {
+    // `pick` descarta o que nao esta na lista: o que vier de nome ou CPF nao
+    // chega ao update, entao nao ha como reintroduzir dado pessoal por aqui.
+    const analisado = agendamentoAnonimizadoSchema.parse({
+      ...ANONIMO,
+      cliente_nome: 'Nome de Volta',
+      cliente_cpf: '529.982.247-25',
+    }) as Record<string, unknown>;
+
+    expect(analisado.cliente_nome).toBeUndefined();
+    expect(analisado.cliente_cpf).toBeUndefined();
+  });
+
+  it('continua exigindo data valida e status conhecido', () => {
+    expect(agendamentoAnonimizadoSchema.safeParse({ ...ANONIMO, data_agendamento: '2026-02-31' }).success).toBe(false);
+    expect(agendamentoAnonimizadoSchema.safeParse({ ...ANONIMO, status: 'inventado' }).success).toBe(false);
   });
 });
