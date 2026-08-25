@@ -43,6 +43,7 @@ import type { AgendamentoComRelacoes, AgendamentoStatus, UserRole, Venda } from 
 import { VendaForm } from '@/components/forms/venda-form';
 import { formatarBrl } from '@/lib/dinheiro';
 import { gerarCsv } from '@/lib/csv';
+import { combinaComBusca } from '@/lib/busca';
 
 const ITENS_POR_PAGINA = 50;
 const TODOS = 'todos';
@@ -102,12 +103,7 @@ export function AgendamentosTable({
       if (lojaId !== TODOS && item.loja_id !== lojaId) return false;
       if (agendadorId !== TODOS && item.agendador_id !== agendadorId) return false;
       if (status.length > 0 && !status.includes(item.status)) return false;
-      if (!termo) return true;
-      return (
-        item.cliente_nome.toLowerCase().includes(termo) ||
-        item.cliente_telefone.includes(termo) ||
-        item.cliente_cpf.includes(termo)
-      );
+      return combinaComBusca(item, termo);
     });
 
     const fator = ordenacao.direcao === 'asc' ? 1 : -1;
