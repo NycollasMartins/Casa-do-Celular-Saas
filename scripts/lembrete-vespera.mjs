@@ -24,8 +24,7 @@ import {
   diaEMes,
   montarMensagemLembrete as montarMensagem,
   normalizarTelefoneBr,
-  canalDisponivel,
-} from './compartilhado.mjs';
+  canalDisponivel, lerTudo } from './compartilhado.mjs';
 
 try {
   for (const linha of readFileSync('.env.local', 'utf8').split('\n')) {
@@ -137,17 +136,24 @@ console.log(`WhatsApp: ${temWhatsapp ? 'Cloud API' : 'nao configurado'}`);
 console.log(`E-mail:   ${temEmail ? 'Resend' : 'nao configurado'}`);
 if (!temProvedor) console.log('Nenhum provedor — modo registro.');
 
-const { data: destinatarios, error } = await admin.rpc('agendamentos_para_lembrete', {
-  p_data: data,
-});
-
-if (error) {
-  console.error('Nao foi possivel consultar:', error.message);
+// Paginado, e aqui o motivo pesa mais que numa tela: a rotina roda sozinha.
+// Resultado de funcao que retorna tabela tambem passa pelo teto de linhas do
+// PostgREST, e o teto nao devolve erro — devolve menos gente. Quem ficasse de
+// fora nao seria avisado, e ninguem perceberia. Como a funcao ordena por nome
+// de loja, seriam sempre as mesmas lojas: as do fim do alfabeto.
+let destinatarios;
+try {
+  destinatarios = await lerTudo(
+    (de, ate) => admin.rpc('agendamentos_para_lembrete', { p_data: data }).range(de, ate),
+    'a lista de lembretes'
+  );
+} catch (excecao) {
+  console.error('Nao foi possivel consultar:', excecao.message);
   console.error('A migration 007 (20250101000006_notificacoes.sql) foi executada?');
   process.exit(1);
 }
 
-if (!destinatarios || destinatarios.length === 0) {
+if (destinatarios.length === 0) {
   console.log('Ninguem para lembrar. Nada a fazer.');
   process.exit(0);
 }

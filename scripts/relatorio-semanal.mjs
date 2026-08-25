@@ -21,8 +21,7 @@ import {
   diaEMes,
   formatarBrl as brl,
   semanaAnterior,
-  somarDias,
-} from './compartilhado.mjs';
+  somarDias, lerTudo } from './compartilhado.mjs';
 
 try {
   for (const linha of readFileSync('.env.local', 'utf8').split('\n')) {
@@ -130,17 +129,29 @@ const semana = semanaForcada
 console.log(`Semana de ${semana.inicio} a ${semana.fim} (fuso ${FUSO})`);
 console.log(`Provedor de e-mail: ${temProvedor ? 'Resend' : 'nenhum — modo registro'}\n`);
 
-const { data: franqueados, error: erroFranqueados } = await admin
-  .from('franqueados')
-  .select('id, nome, email_contato')
-  .eq('status', 'ativo');
-
-if (erroFranqueados) {
-  console.error('Nao foi possivel listar os franqueados:', erroFranqueados.message);
+// Paginado pelo mesmo motivo do lembrete: o teto de linhas do PostgREST nao
+// devolve erro, devolve menos. Uma rede com mais franqueados que o teto
+// deixaria os ultimos sem resumo, toda semana, sem nada acusar. Hoje esse
+// numero e pequeno; depender disso e o que faz a proxima leitura nascer sem
+// protecao.
+let franqueados;
+try {
+  franqueados = await lerTudo(
+    (de, ate) =>
+      admin
+        .from('franqueados')
+        .select('id, nome, email_contato')
+        .eq('status', 'ativo')
+        .order('nome')
+        .range(de, ate),
+    'a lista de franqueados'
+  );
+} catch (excecao) {
+  console.error('Nao foi possivel listar os franqueados:', excecao.message);
   process.exit(1);
 }
 
-if (!franqueados || franqueados.length === 0) {
+if (franqueados.length === 0) {
   console.log('Nenhum franqueado ativo. Nada a fazer.');
   process.exit(0);
 }

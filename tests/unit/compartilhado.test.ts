@@ -161,3 +161,55 @@ describe('precedencia de canal', () => {
     }
   });
 });
+
+describe('leitura paginada: script contra lib', () => {
+  /**
+   * Os scripts de rotina leem do banco tanto quanto as telas — e correm um
+   * risco maior. Eles rodam sozinhos, de madrugada: se o teto de linhas do
+   * PostgREST cortar a resposta, quem ficou de fora nao e avisado e ninguem
+   * percebe.
+   *
+   * Vale tambem para funcao que retorna tabela, que e como o lembrete busca
+   * quem avisar. E o corte nao seria aleatorio: a funcao ordena por nome de
+   * loja, entao seriam sempre as mesmas lojas.
+   */
+  function servidorComTeto(total: number, teto: number) {
+    return (de: number, ate: number) => {
+      const fim = Math.min(ate, de + teto - 1, total - 1);
+      const data = [];
+      for (let i = de; i <= fim; i++) data.push({ id: i });
+      return Promise.resolve({ data, error: null });
+    };
+  }
+
+  it.each([
+    [2_600, 500, 'teto do servidor menor que a pagina'],
+    [2_600, 1_000, 'teto igual a pagina'],
+    [0, 1_000, 'nada a ler'],
+    [1_000, 1_000, 'exatamente uma pagina cheia'],
+  ])('le %i linhas com teto %i (%s)', async (total, teto) => {
+    const doScript = await script.lerTudo(servidorComTeto(total, teto), 'os registros');
+
+    expect(doScript).toHaveLength(total);
+    expect(doScript.map((l: { id: number }) => l.id)).toEqual(
+      Array.from({ length: total }, (_, i) => i)
+    );
+  });
+
+  it('as duas implementacoes devolvem o mesmo', async () => {
+    const { lerPaginado } = await import('@/lib/supabase/queries');
+
+    const doScript = await script.lerTudo(servidorComTeto(2_600, 500), 'os registros');
+    const daLib = await lerPaginado(servidorComTeto(2_600, 500), { oQue: 'os registros' });
+
+    expect(doScript).toEqual(daLib);
+  });
+
+  it('erro sobe, em vez de virar lista vazia', async () => {
+    // Devolver [] calado faria a rotina imprimir "ninguem para lembrar" e
+    // encerrar com sucesso num dia em que a consulta falhou.
+    const falha = () => Promise.resolve({ data: null, error: { message: 'conexao caiu' } });
+
+    await expect(script.lerTudo(falha, 'os lembretes')).rejects.toThrow(/conexao caiu/);
+  });
+});

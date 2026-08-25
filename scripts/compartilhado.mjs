@@ -132,3 +132,42 @@ export function canalDisponivel(destinatario, provedores) {
   if (provedores.email && destinatario.cliente_email) return 'email';
   return 'registro';
 }
+
+/* ------------------------------ Leitura ------------------------------ */
+
+export const TAMANHO_PAGINA = 1000;
+
+/**
+ * Le TODAS as linhas de uma consulta, pagina por pagina.
+ *
+ * Espelha `lerPaginado` de lib/supabase/queries.ts, e existe pelo mesmo
+ * motivo: o PostgREST corta toda resposta em `db-max-rows` e NAO devolve erro
+ * — devolve menos linhas. Vale tambem para funcao que retorna tabela, que e
+ * como o lembrete busca quem avisar.
+ *
+ * Aqui pesa mais que numa tela. A rotina roda sozinha, de madrugada: quem
+ * ficou de fora do corte simplesmente nao e avisado, e ninguem percebe. E o
+ * corte nao e aleatorio — a funcao ordena por nome de loja, entao seriam
+ * sempre as mesmas lojas, as do fim do alfabeto.
+ *
+ * O avanco segue o tamanho REAL da resposta e a saida so acontece com pagina
+ * vazia: parar quando a pagina vem menor que a pedida encerraria na primeira
+ * se o teto do servidor fosse menor que TAMANHO_PAGINA.
+ */
+export async function lerTudo(buscarPagina, oQue = 'os registros') {
+  const linhas = [];
+
+  for (let inicio = 0; ; ) {
+    const { data, error } = await buscarPagina(inicio, inicio + TAMANHO_PAGINA - 1);
+
+    if (error) throw new Error(`Nao foi possivel carregar ${oQue}: ${error.message}`);
+
+    const pagina = data ?? [];
+    linhas.push(...pagina);
+    inicio += pagina.length;
+
+    if (pagina.length === 0) break;
+  }
+
+  return linhas;
+}
