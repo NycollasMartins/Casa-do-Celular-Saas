@@ -900,6 +900,113 @@ begin
   delete from auth.users where email in ('donoB@b.com','agB@b.com');
 end $$;
 
+-- ============ o ciclo de escrita de meta continua inteiro ============
+--
+-- POR QUE ISTO ENTROU JUNTO COM A 014
+-- Aquela migration estreitou o `using` de `metas_write` para fechar o
+-- vazamento entre tenants. Estreitar policy de escrita e o tipo de mudanca
+-- que conserta um lado e quebra o outro sem avisar: o vazamento fecha, e de
+-- repente ninguem mais consegue salvar meta nenhuma.
+--
+-- A aplicacao grava com UPSERT. O caminho de conflito e um UPDATE, e UPDATE
+-- consulta o `using` — exatamente a clausula que mudou. Criar meta pela
+-- primeira vez nao passaria por ali; editar, sim.
+do $$
+declare
+  v_dono uuid; v_ag uuid; v_dir uuid; v_comp date; v_erro text; v_valor int;
+begin
+  select id into v_dono from auth.users where email = 'dono@franqueado.com.br';
+  select id into v_ag   from auth.users where email = 'agendador1.loja1@franqueado.com.br';
+  select id into v_dir  from auth.users where email = 'diretor1@franqueado.com.br';
+  v_comp := date_trunc('month', current_date)::date;
+
+  perform set_config('request.jwt.claim.sub', v_dono::text, false);
+  set role authenticated;
+
+  -- 1. Criar.
+  begin
+    insert into public.metas (usuario_id, competencia, meta_agendamentos, definida_por)
+    values (v_ag, v_comp, 40, v_dono);
+    v_erro := 'criou';
+  exception when others then v_erro := 'barrou: ' || sqlerrm;
+  end;
+  perform pg_temp.checar('franqueado cria meta do proprio time', 'criou', v_erro);
+
+  -- 2. Editar pelo mesmo caminho da aplicacao: upsert que cai em conflito.
+  begin
+    insert into public.metas (usuario_id, competencia, meta_agendamentos, definida_por)
+    values (v_ag, v_comp, 55, v_dono)
+    on conflict (usuario_id, competencia) do update set meta_agendamentos = excluded.meta_agendamentos;
+    v_erro := 'atualizou';
+  exception when others then v_erro := 'barrou: ' || sqlerrm;
+  end;
+  perform pg_temp.checar('upsert de meta atualiza a existente', 'atualizou', v_erro);
+
+  select meta_agendamentos into v_valor from public.metas
+   where usuario_id = v_ag and competencia = v_comp;
+  perform pg_temp.checar('e o valor novo ficou gravado', '55', v_valor::text);
+
+  reset role;
+
+  -- 3. Diretor nao escreve meta: `pode_gerenciar()` nao o inclui.
+  perform set_config('request.jwt.claim.sub', v_dir::text, false);
+  set role authenticated;
+  begin
+    update public.metas set meta_agendamentos = 999
+     where usuario_id = v_ag and competencia = v_comp;
+  exception when others then null;
+  end;
+  reset role;
+  select meta_agendamentos into v_valor from public.metas
+   where usuario_id = v_ag and competencia = v_comp;
+  perform pg_temp.checar('diretor NAO altera meta', '55', v_valor::text);
+
+  -- 4. A meta de quem foi DESLIGADO continua removivel.
+  --
+  -- E o caso que decidiu o escopo da migration 014. Escopar o `using` por
+  -- vinculo ATIVO — copiando a condicao do `with check`, que e o caminho
+  -- obvio — deixaria essa meta sem dono: o desligamento encerra o vinculo, e
+  -- ninguem mais a alcancaria. Medido antes de escolher: com escopo por
+  -- vinculo a linha sobrevive ao delete; com escopo por tenant, sai.
+  perform set_config('request.jwt.claim.sub', v_dono::text, false);
+  set role authenticated;
+  begin
+    insert into public.metas (usuario_id, competencia, meta_agendamentos, definida_por)
+    values (v_ag, v_comp + interval '1 month', 30, v_dono);
+  exception when others then null;
+  end;
+  reset role;
+
+  update public.agendadores_lojas set data_fim = current_date
+   where usuario_id = v_ag and data_fim is null;
+
+  perform set_config('request.jwt.claim.sub', v_dono::text, false);
+  set role authenticated;
+  begin
+    delete from public.metas where usuario_id = v_ag and competencia = (v_comp + interval '1 month')::date;
+  exception when others then null;
+  end;
+  reset role;
+
+  perform pg_temp.checar('meta de quem foi desligado ainda e removivel', '0',
+    (select count(*)::text from public.metas
+      where usuario_id = v_ag and competencia = (v_comp + interval '1 month')::date));
+
+  -- Reabre o vinculo: as assercoes seguintes contam com ele.
+  update public.agendadores_lojas set data_fim = null where usuario_id = v_ag;
+
+  -- 5. Apagar, que e so `using` — nao ha `with check` no delete.
+  perform set_config('request.jwt.claim.sub', v_dono::text, false);
+  set role authenticated;
+  begin
+    delete from public.metas where usuario_id = v_ag and competencia = v_comp;
+  exception when others then null;
+  end;
+  reset role;
+  perform pg_temp.checar('franqueado apaga meta do proprio time', '0',
+    (select count(*)::text from public.metas where usuario_id = v_ag and competencia = v_comp));
+end $$;
+
 -- Desfaz o que as asserçoes escreveram, para poderem rodar de novo.
 reset role;
 delete from public.vendas where valor in (1500.50, 200, 100);

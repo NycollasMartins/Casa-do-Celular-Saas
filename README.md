@@ -408,9 +408,9 @@ npm run verificar:banco
 
 Cria um banco descartável no PostgreSQL local, reproduz o que o Supabase
 fornece (schema `auth`, `auth.uid()`, os papéis), aplica **todas** as
-migrations na ordem, popula o seed e roda **91 asserções**:
+migrations na ordem, popula o seed e roda **97 asserções**:
 
-- **65 de RLS**, impersonando cada papel — inclusive a tentativa de escalada
+- **71 de RLS**, impersonando cada papel — inclusive a tentativa de escalada
   de privilégio, que precisa ser barrada. **Todas** espelham afirmações de
   `tests/rls/*.test.ts`, que dependem do PostgREST e nunca rodaram — a
   correspondência é verificada por teste, não prometida em prosa.
@@ -448,7 +448,7 @@ de uma vez e que repara aplicação parcial. Nenhuma das duas estava
 verificada. Se fossem falsas, a descoberta viria no pior lugar possível —
 erro no meio da execução, em produção, sem transação para desfazer.
 
-Três cenários, e em todos as 91 asserções de comportamento precisam passar
+Três cenários, e em todos as 97 asserções de comportamento precisam passar
 no fim:
 
 - **Aplicação parcial**: schema, RLS e seed prontos, mais algumas migrations
@@ -462,7 +462,7 @@ no fim:
 
 `.github/workflows/ci.yml` roda a cada push na `main` e em cada pull request:
 checagem de tipos, lint, testes unitários, build de produção e — num
-container Postgres descartável — as 14 migrations com as 91 asserções de RLS
+container Postgres descartável — as 14 migrations com as 97 asserções de RLS
 e funções. É o que impede uma migration quebrada chegar ao SQL Editor. A Netlify
 publica a partir da `main`, então sem essa verificação um commit que quebra o
 build vai direto para produção e só aparece quando alguém abre o sistema.
