@@ -94,6 +94,47 @@ describe('bloco de CONFERENCIA do consolidado', () => {
   });
 });
 
+describe('cada migration aparece na conferencia', () => {
+  /**
+   * A regra acima cobre objetos CRIADOS depois do seed. Migration que so
+   * SUBSTITUI passa por fora dela: nao cria tabela, nem funcao nova, nem
+   * trigger — troca o corpo de uma funcao que ja existia, ou uma policy.
+   *
+   * Foi exatamente o que aconteceu com as duas ultimas, que fecham escalada
+   * de privilegio. O bloco de conferencia dizia OK sem elas terem rodado,
+   * porque conferia a PRESENCA do trigger, e ele existe desde a 005. Quem
+   * colasse o arquivo veria tudo verde e concluiria que aplicou as correcoes.
+   *
+   * Esta regra e por MIGRATION, nao por objeto: cada arquivo posterior ao
+   * seed precisa aparecer na conferencia, seja por um objeto que ele cria,
+   * seja pelo proprio numero.
+   */
+  const gerador = readFileSync('scripts/gerar-consolidado.mjs', 'utf8');
+  const bloco = gerador.slice(gerador.indexOf('with esperado(item'));
+
+  const posteriores = readdirSync('supabase/migrations')
+    .filter((nome) => nome.endsWith('.sql') && nome > '20250101000002_seed.sql')
+    .sort();
+
+  it.each(posteriores)('%s tem algo conferido', (nome) => {
+    const fonte = readFileSync(`supabase/migrations/${nome}`, 'utf8');
+    const numero = fonte.match(/^--\s*(\d{3})\s*-/m)?.[1];
+
+    const objetos = [
+      ...fonte.matchAll(/create table if not exists\s+(?:public\.)?(\w+)/gi),
+      ...fonte.matchAll(/create (?:or replace )?function\s+(?:public\.)?(\w+)/gi),
+      ...fonte.matchAll(/create trigger\s+(\w+)/gi),
+      ...fonte.matchAll(/add column if not exists\s+(\w+)/gi),
+    ].map((m) => m[1]);
+
+    const citada =
+      (numero !== undefined && bloco.includes(`'${numero} ·`)) ||
+      objetos.some((objeto) => bloco.includes(`'${objeto}'`) || bloco.includes(`.${objeto}'`));
+
+    expect(citada, `a migration ${nome} nao e verificavel pelo bloco de conferencia`).toBe(true);
+  });
+});
+
 describe('sondagem de /api/saude', () => {
   const prontidao = readFileSync('lib/prontidao.ts', 'utf8');
   const sondados = new Set(
