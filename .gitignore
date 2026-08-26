@@ -17,3 +17,8 @@ imagens
 test-results
 playwright-report
 blob-report
+
+# Copias do banco. Contem nome, CPF e telefone de clientes finais — nunca
+# entram no repositorio, nem por engano num `git add -A`.
+backups/
+*.sql.gz

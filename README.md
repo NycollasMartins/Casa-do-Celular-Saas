@@ -432,6 +432,32 @@ quebrada se revela em produção, no pior momento possível. Requer apenas
 Não substitui `npm run test:rls`, que exercita também o PostgREST e o
 GoTrue. Cobre a camada onde a segurança de fato mora.
 
+### Cópia de segurança, e o ensaio de restauração
+
+```bash
+npm run backup             # gera a cópia
+npm run backup -- --ensaio # gera E restaura num banco descartável
+```
+
+O Supabase só faz cópia automática em planos pagos. No gratuito não há
+nenhuma — e este sistema guarda nome, CPF e telefone de quem foi atendido.
+
+**O ensaio importa mais que a cópia.** Cópia que nunca foi restaurada é uma
+suposição. Com `--ensaio`, o arquivo é restaurado num banco novo e as mesmas
+**97 asserções** de comportamento rodam contra ele. Se a cópia estiver
+truncada ou faltando o schema `auth`, elas acusam — os dois casos foram
+testados de propósito.
+
+A cópia inclui o schema `auth`. Sem ele as contas não voltam, e toda chave
+estrangeira de usuário fica apontando para o vazio — foi exatamente o que o
+teste do caso "sem auth" mostrou.
+
+Precisa da string de conexão do Postgres em `SUPABASE_DB_URL`, que fica em
+*Settings → Database → Connection string → URI*. Ela **não** é a
+`service_role`: é a senha do banco, definida na criação do projeto. Os
+arquivos gerados ficam em `backups/`, que está no `.gitignore` — uma cópia
+com CPF de cliente não pode entrar no repositório nem por engano.
+
 ### Verificação do arquivo que vai para produção
 
 ```bash

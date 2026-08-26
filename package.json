@@ -22,7 +22,8 @@
     "consolidado:gerar": "node scripts/gerar-consolidado.mjs",
     "consolidado:conferir": "node scripts/gerar-consolidado.mjs --conferir",
     "medir:consultas": "bash scripts/medir-consultas.sh",
-    "verificar:consolidado": "bash scripts/verificar-consolidado.sh"
+    "verificar:consolidado": "bash scripts/verificar-consolidado.sh",
+    "backup": "bash scripts/backup.sh"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
