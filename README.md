@@ -223,6 +223,50 @@ sem ele, um vínculo cruzado dá acesso aos dados do outro tenant.
 > Rode `notify pgrst, 'reload schema';` no SQL Editor — o
 > `APLICAR-PENDENTES.sql` já faz isso ao final.
 
+## Instalação para um cliente (sem seed)
+
+Os quinze passos acima montam um ambiente de **desenvolvimento**: incluem o
+seed, que cria um franqueado fictício, 9 lojas, 50 agendamentos e 21 contas
+com a mesma senha, escrita neste repositório e que o middleware nunca obriga
+a trocar.
+
+Nada disso pode existir no banco de um cliente. A instalação limpa tem quatro
+passos:
+
+**1. Schema e RLS** — `20250101000000_schema.sql` e depois
+`20250101000001_rls.sql`, no SQL Editor.
+
+**2. Tudo que vem depois** — cole `supabase/APLICAR-PENDENTES.sql`, que reúne
+as migrations posteriores ao seed na ordem certa e termina listando o que
+ficou faltando. **Pule o seed** (`npm run seed:auth` e
+`20250101000002_seed.sql`): eles são os dois passos que injetam dado fictício.
+
+**3. A primeira conta** — de volta ao terminal:
+
+```bash
+npm run admin:criar -- --nome "Nome do Dono" --email dono@empresa.com.br
+```
+
+Cria **uma** conta de super admin, com senha aleatória mostrada uma única vez
+e marcada como provisória — o middleware exige a troca antes de liberar
+qualquer tela. Não insere nenhum dado de negócio.
+
+O comando **se recusa a rodar** se o banco já tiver um super admin, inclusive
+desligado: ele é o bootstrap, não a porta de entrada permanente. A partir daí
+tudo é pela tela, que é onde as regras de tenant valem. Perdeu a senha antes
+da troca? Apague a conta em *Authentication → Users* e rode de novo.
+
+**4. O resto é do cliente** — logado como super admin, ele cadastra o
+franqueado, as lojas e a equipe. Cada conta criada por ali nasce com senha
+provisória própria, e o papel define o que a pessoa enxerga.
+
+Por que existe um script para isto: não há auto-cadastro nesta aplicação — de
+propósito, porque toda conta pertence a um franqueado e precisa de loja e
+papel definidos. O efeito colateral é um ovo-e-galinha na instalação, e até
+aqui o único jeito de sair dele era rodar o seed.
+
+---
+
 ### Tabelas
 
 | Tabela | Papel |
@@ -251,8 +295,9 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 
 `SUPABASE_SERVICE_ROLE_KEY` **ignora o RLS**. Nunca prefixe com
 `NEXT_PUBLIC_`, nunca importe `lib/supabase/admin.ts` em client component.
-Ela é usada em dois lugares apenas: o script de seed e a criação de usuários
-(que já checa o papel de quem chamou).
+Ela é usada em três lugares apenas: o script de seed, o de bootstrap do
+primeiro super admin (`npm run admin:criar`) e a criação de usuários pela
+tela (que já checa o papel de quem chamou).
 
 ---
 

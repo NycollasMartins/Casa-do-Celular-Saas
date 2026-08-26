@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "admin:criar": "node scripts/criar-super-admin.mjs",
     "seed:auth": "node scripts/seed-auth-users.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
