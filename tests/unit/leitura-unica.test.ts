@@ -1,3 +1,5 @@
+import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -77,5 +79,49 @@ describe('leitura unica na tela de Relatorios', () => {
     const asDuas = consultas.filter((t) => t === 'agendamentos').length;
 
     expect(asDuas).toBe(umaSo * 2);
+  });
+});
+
+describe('quem importa os graficos, e quem le duas vezes', () => {
+  const telas = execSync("find app -name 'page.tsx'", { encoding: 'utf8' })
+    .trim()
+    .split('\n')
+    .filter(Boolean);
+
+  it('nenhuma tela importa o container de graficos direto', () => {
+    /**
+     * A biblioteca de graficos custa ~108 kB de JavaScript. Importada direto,
+     * ela entra no carregamento INICIAL da tela — antes de qualquer numero
+     * aparecer. `charts-lazy` existe para carrega-la depois.
+     *
+     * Medido: /dashboard caiu de 268 kB para 160 kB, e /admin/metricas-gerais
+     * de 241 kB para 132 kB.
+     */
+    const direto = telas.filter((caminho) =>
+      readFileSync(caminho, 'utf8').includes("from '@/components/dashboard/charts-container'")
+    );
+
+    expect(direto).toEqual([]);
+  });
+
+  it('o carregamento tardio nao arrasta a biblioteca de volta', () => {
+    // A primeira tentativa nao funcionou: `charts-lazy` importava o esqueleto
+    // de `charts-container`, e isso puxava a biblioteca inteira para o pedaco
+    // inicial. O dashboard continuou em 269 kB ate o esqueleto sair de la.
+    const lazy = readFileSync('components/dashboard/charts-lazy.tsx', 'utf8');
+    const estaticos = [...lazy.matchAll(/^import .* from '([^']+)'/gm)].map((m) => m[1]);
+
+    expect(estaticos).not.toContain('./charts-container');
+  });
+
+  it('nenhuma tela pede as duas agregacoes separadas', () => {
+    // Cada uma varre o periodo inteiro e busca as vendas. Pedir as duas custa
+    // tudo em dobro — e a leitura sai do Supabase por HTTP, em paginas.
+    const emDobro = telas.filter((caminho) => {
+      const fonte = readFileSync(caminho, 'utf8');
+      return fonte.includes('calcularMetricas(') && fonte.includes('calcularMetricasPorLoja(');
+    });
+
+    expect(emDobro).toEqual([]);
   });
 });

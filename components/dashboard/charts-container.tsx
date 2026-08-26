@@ -185,13 +185,3 @@ export function ChartsContainer({ metricas }: { metricas: ResumoMetricas }) {
     </div>
   );
 }
-
-export function ChartsSkeleton() {
-  return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      {[0, 1, 2, 3].map((i) => (
-        <Card key={i} className="h-[356px] animate-pulse bg-slate-100/60" />
-      ))}
-    </div>
-  );
-}

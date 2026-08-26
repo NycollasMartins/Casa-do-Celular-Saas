@@ -2,7 +2,8 @@ import { Suspense } from 'react';
 import { LojaSelector } from '@/components/dashboard/loja-selector';
 import { PeriodoSelector } from '@/components/dashboard/periodo-selector';
 import { MetricsCards, MetricsCardsSkeleton } from '@/components/dashboard/metrics-cards';
-import { ChartsContainer, ChartsSkeleton } from '@/components/dashboard/charts-container';
+import { ChartsSkeleton } from '@/components/dashboard/charts-skeleton';
+import { ChartsLazy } from '@/components/dashboard/charts-lazy';
 import { AgendamentosTable, AgendamentosTableSkeleton } from '@/components/dashboard/agendamentos-table';
 import { MinhaMeta } from '@/components/dashboard/minha-meta';
 import { exigirUsuario } from '@/lib/auth/session';
@@ -28,7 +29,7 @@ async function Indicadores({ filtros }: { filtros: ReturnType<typeof lerFiltros>
   return (
     <>
       <MetricsCards metricas={metricas} />
-      <ChartsContainer metricas={metricas} />
+      <ChartsLazy metricas={metricas} />
     </>
   );
 }

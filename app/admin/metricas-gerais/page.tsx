@@ -1,9 +1,9 @@
 import { MetricsCards } from '@/components/dashboard/metrics-cards';
-import { ChartsContainer } from '@/components/dashboard/charts-container';
+import { ChartsLazy } from '@/components/dashboard/charts-lazy';
 import { PeriodoSelector } from '@/components/dashboard/periodo-selector';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { calcularMetricas, calcularMetricasPorLoja } from '@/lib/supabase/queries';
+import { calcularMetricasEPorLoja } from '@/lib/supabase/queries';
 import { lerFiltros, type ParametrosBusca } from '@/lib/filtros';
 import { formatarNumero, formatarPercentual } from '@/lib/utils';
 import { LinhaVazia } from '@/components/ui/linha-vazia';
@@ -13,10 +13,10 @@ export const metadata = { title: 'Metricas da rede · Admin' };
 /** Visao consolidada de todos os franqueados (RLS libera tudo ao super admin). */
 export default async function MetricasGeraisPage({ searchParams }: { searchParams: ParametrosBusca }) {
   const filtros = lerFiltros(searchParams);
-  const [metricas, porLoja] = await Promise.all([
-    calcularMetricas(filtros),
-    calcularMetricasPorLoja(filtros),
-  ]);
+  // UMA leitura para as duas agregacoes. Pedir separado varre o periodo
+  // inteiro duas vezes — e busca as vendas duas vezes junto. O mesmo
+  // desperdicio foi corrigido em Relatorios e ficou aqui.
+  const { metricas, porLoja } = await calcularMetricasEPorLoja(filtros);
 
   return (
     <div className="space-y-6">
@@ -33,7 +33,7 @@ export default async function MetricasGeraisPage({ searchParams }: { searchParam
       </div>
 
       <MetricsCards metricas={metricas} />
-      <ChartsContainer metricas={metricas} />
+      <ChartsLazy metricas={metricas} />
 
       <Card>
         <CardContent className="px-0 pt-0">
