@@ -823,6 +823,27 @@ recuperação de senha volta para `localhost`.
 `NEXT_PUBLIC_SENTRY_DSN` nada é inicializado e nenhuma requisição sai da
 aplicação. Para ligar, preencha as variáveis do `.env.example`.
 
+Inerte, porém, não quer dizer sem custo. O middleware roda em **toda**
+requisição, e o Sentry entra no pacote dele pela instrumentação de borda.
+Medido no build:
+
+```
+com Sentry na borda   133 kB
+sem Sentry na borda    84 kB
+```
+
+São 49 kB — 37% do middleware — carregados a cada requisição por um serviço
+que, sem DSN, não envia nada. Tentei condicionar o carregamento à presença da
+variável e **não funciona**: o import é dinâmico, mas para a borda o Next
+junta tudo num arquivo só, então a condição em tempo de execução não tira
+nada do pacote.
+
+O único jeito de recuperar os 49 kB é remover a linha
+`await import('./sentry.edge.config')` de `instrumentation.ts` — e o preço é
+perder a captura de erro do middleware, que é justamente a que não dá para
+depurar de outro jeito. A escolha depende de quanto o primeiro carregamento
+importa para você; o número está aqui para ela ser informada.
+
 Dois cuidados na configuração, ambos por causa do CPF de cliente final:
 `sendDefaultPii` está desligado, e um `beforeSend` remove CPF e telefone de
 qualquer texto do evento antes do envio — inclusive de URL em breadcrumb e
