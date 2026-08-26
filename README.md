@@ -506,10 +506,22 @@ e funções. É o que impede uma migration quebrada chegar ao SQL Editor. A Netl
 publica a partir da `main`, então sem essa verificação um commit que quebra o
 build vai direto para produção e só aparece quando alguém abre o sistema.
 
-O job de E2E precisa das chaves do Supabase. Configure
-`NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` em *Settings →
-Secrets and variables → Actions*. Sem elas o job avisa e encerra sem falhar —
-o projeto continua clonável e verificável por quem não tem acesso ao banco.
+Há **dois** jobs de navegador, e a diferença importa:
+
+- **`navegador`** roda sempre, sem segredo nenhum. Ele sobe a aplicação com
+  uma URL de Supabase bem formada porém inexistente — medido: o login
+  renderiza, `getUser()` falha sem derrubar nada e o middleware manda
+  `/dashboard` para o login, que é exatamente o portão sob teste. Nenhum
+  desses casos consulta o banco.
+- **`e2e`** cobre as suítes que autenticam, e precisa das chaves de verdade
+  mais os usuários do seed. Configure `NEXT_PUBLIC_SUPABASE_URL` e
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY` em *Settings → Secrets and variables →
+  Actions*. Sem elas o job avisa e encerra sem falhar — o projeto continua
+  clonável e verificável por quem não tem acesso ao banco.
+
+A separação existe porque o segundo job nunca rodou: sem seed, ele se pula
+inteiro. Enquanto isso o navegador não exercitava esta aplicação em lugar
+nenhum, nem o portão que decide quem entra.
 
 Os testes de **RLS não rodam no CI de propósito**: eles escrevem no banco
 para provar que as policies barram o que devem barrar, e fazer isso a cada

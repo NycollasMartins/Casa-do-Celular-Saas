@@ -111,6 +111,52 @@ jobs:
       - name: Verificar o consolidado que vai para producao
         run: bash scripts/verificar-consolidado.sh
 
+  navegador:
+    name: Navegador (superficie publica)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: verificacao
+
+    # SEM SEGREDO NENHUM, de proposito.
+    #
+    # As suites que autenticam dependem dos usuarios do seed, que nao existem
+    # em lugar nenhum — entao nunca rodaram, e o navegador nunca abriu esta
+    # aplicacao em CI. Estes casos nao fazem login.
+    #
+    # Medido antes de escrever isto: com uma URL de Supabase bem formada porem
+    # inexistente, a aplicacao SOBE. O login renderiza, `getUser()` falha sem
+    # derrubar nada e o middleware manda /dashboard para o login — que e
+    # exatamente o portao sob teste. Nao ha rede envolvida.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Instalar o Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Rodar a suite publica
+        env:
+          # Bem formada e inexistente. Chave de verdade aqui nao acrescentaria
+          # nada: nenhum destes casos consulta o banco.
+          NEXT_PUBLIC_SUPABASE_URL: https://exemplo.invalid
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: chave-de-teste-sem-valor
+          NEXT_PUBLIC_SITE_URL: http://localhost:3100
+        run: npm run test:e2e:publico
+
+      - name: Guardar o relatorio quando falhar
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-publico
+          path: playwright-report/
+
   e2e:
     name: Testes de ponta a ponta
     runs-on: ubuntu-latest
@@ -131,10 +177,11 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
-      # O E2E sobe a aplicacao de verdade, entao precisa das chaves do
-      # Supabase. Sem os segredos configurados no repositorio, o job avisa e
-      # encerra sem falhar — o projeto continua clonavel e verificavel por
-      # quem nao tem acesso ao banco.
+      # Este job cobre as suites que AUTENTICAM, e por isso precisa das chaves
+      # de verdade e dos usuarios do seed. Sem os segredos, avisa e encerra sem
+      # falhar — o projeto continua clonavel e verificavel por quem nao tem
+      # acesso ao banco. A superficie publica ja foi coberta pelo job anterior,
+      # que nao depende de nada disso.
       - name: Verificar segredos
         id: segredos
         run: |
