@@ -1,5 +1,7 @@
 'use client';
 
+import dynamic from 'next/dynamic';
+
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { KeyRound, Pencil, UserCheck, UserX } from 'lucide-react';
@@ -13,10 +15,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { UsuarioEdicaoForm } from '@/components/forms/usuario-edicao-form';
+
 import { definirStatusUsuario, gerarSenhaProvisoria } from '@/app/actions/cadastros';
 import { CredencialProvisoria } from '@/components/forms/credencial-provisoria';
 import type { Usuario } from '@/lib/types/database';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface Props {
   usuario: Usuario;
@@ -25,6 +28,19 @@ interface Props {
   /** Conta do proprio gestor: nao pode desativar a si mesmo. */
   ehVoce: boolean;
 }
+
+/**
+ * O formulario so e baixado quando o dialogo abre.
+ *
+ * Ele arrasta a validacao e o controle de formulario — cerca de oitenta
+ * kilobytes. Esta tela e uma LISTA: quem chega nela quer ver o que existe,
+ * nao cadastrar. Carregar o formulario junto e pagar o cadastro em toda
+ * visita para atender ao clique que acontece as vezes.
+ */
+const UsuarioEdicaoForm = dynamic(
+  () => import('@/components/forms/usuario-edicao-form').then((modulo) => modulo.UsuarioEdicaoForm),
+  { loading: () => <Skeleton className="h-72 w-full" /> }
+);
 
 export function AcoesUsuario({ usuario, lojas, lojaAtualId, ehVoce }: Props) {
   const router = useRouter();

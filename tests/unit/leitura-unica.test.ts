@@ -125,3 +125,69 @@ describe('quem importa os graficos, e quem le duas vezes', () => {
     expect(emDobro).toEqual([]);
   });
 });
+
+describe('peso das telas de lista', () => {
+  /**
+   * Formulario arrasta a validacao e o controle de formulario — cerca de
+   * oitenta kilobytes. Numa tela de LISTA isso e pago em toda visita para
+   * atender ao clique que acontece as vezes.
+   *
+   * Medido no build:
+   *   /dashboard/lojas        168 kB -> 113 kB
+   *   /admin/franqueados      167 kB -> 113 kB
+   *   /dashboard/usuarios     170 kB -> 124 kB
+   *
+   * As duas telas em que o formulario E o proposito ficam de fora: ali nao ha
+   * o que adiar.
+   */
+  const O_FORMULARIO_E_A_TELA = [
+    'app/dashboard/agendamentos/novo/page.tsx',
+    'app/dashboard/agendamentos/[id]/page.tsx',
+  ];
+
+  /**
+   * O criterio e o PESO, nao a pasta.
+   *
+   * A primeira versao deste teste reprovava qualquer import estatico de
+   * `components/forms/`, e acusou dois arquivos ja corrigidos: eles importam
+   * `CredencialProvisoria`, que mora ali mas nao e formulario — nao carrega
+   * validacao nem controle de formulario, e pesa quase nada.
+   *
+   * O que custa e `react-hook-form`. Entao e ele que o teste procura.
+   */
+  function ehPesado(modulo: string): boolean {
+    const caminho = modulo.replace('@/', '') + '.tsx';
+    try {
+      return readFileSync(caminho, 'utf8').includes("from 'react-hook-form'");
+    } catch {
+      return false;
+    }
+  }
+
+  const arquivos = execSync("find app components -name '*.tsx'", { encoding: 'utf8' })
+    .trim()
+    .split('\n')
+    .filter(Boolean);
+
+  it('so as telas de formulario carregam react-hook-form de forma estatica', () => {
+    const estaticos = arquivos.filter((caminho) => {
+      if (O_FORMULARIO_E_A_TELA.includes(caminho)) return false;
+
+      const fonte = readFileSync(caminho, 'utf8');
+      // O proprio formulario importa react-hook-form: e o que ele e.
+      if (fonte.includes("from 'react-hook-form'")) return false;
+
+      return [...fonte.matchAll(/^import \{[^}]*\} from '(@\/components\/forms\/[a-z-]+)'/gm)].some(
+        (m) => ehPesado(m[1])
+      );
+    });
+
+    expect(estaticos).toEqual([]);
+  });
+
+  it('nao ha isencao orfa', () => {
+    const orfas = O_FORMULARIO_E_A_TELA.filter((caminho) => !arquivos.includes(caminho));
+
+    expect(orfas).toEqual([]);
+  });
+});

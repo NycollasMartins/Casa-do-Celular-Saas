@@ -1,5 +1,7 @@
 'use client';
 
+import dynamic from 'next/dynamic';
+
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import {
@@ -40,7 +42,7 @@ import { deletarAgendamento } from '@/app/actions/agendamentos';
 import { STATUS_LABEL, cn, formatarDataIso } from '@/lib/utils';
 import { hojeNaLoja } from '@/lib/semana';
 import type { AgendamentoComRelacoes, AgendamentoStatus, UserRole, Venda } from '@/lib/types/database';
-import { VendaForm } from '@/components/forms/venda-form';
+
 import { formatarBrl } from '@/lib/dinheiro';
 import { gerarCsv } from '@/lib/csv';
 import { combinaComBusca } from '@/lib/busca';
@@ -70,6 +72,18 @@ interface Props {
   /** Lembrete de vespera por agendamento, quando a rotina ja passou por ele. */
   lembretes?: Record<string, { status: 'enviada' | 'falhou'; canal: string; detalhe: string | null }>;
 }
+
+/**
+ * O formulario de venda so e baixado quando alguem abre o dialogo.
+ *
+ * Esta e a tela de listagem, aberta o tempo todo; registrar venda acontece
+ * em uma fracao dos atendimentos. Carregar a validacao e o controle de
+ * formulario junto da lista e pagar o caso raro em toda visita.
+ */
+const VendaForm = dynamic(
+  () => import('@/components/forms/venda-form').then((modulo) => modulo.VendaForm),
+  { loading: () => <Skeleton className="h-64 w-full" /> }
+);
 
 export function AgendamentosTable({
   agendamentos,
