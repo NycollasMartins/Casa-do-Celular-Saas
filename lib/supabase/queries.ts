@@ -67,13 +67,17 @@ export function resolverIntervalo(
  * no cliente e a maneira mais facil de as duas versoes divergirem.
  */
 export async function buscarLojasDoUsuario(): Promise<
-  Pick<Loja, 'id' | 'nome' | 'codigo_loja' | 'cidade' | 'estado'>[]
+  Pick<Loja, 'id' | 'nome' | 'codigo_loja' | 'cidade' | 'estado' | 'franqueado_id'>[]
 > {
   const supabase = createClient();
 
+  // `franqueado_id` vem junto por causa do super admin: ele enxerga as lojas
+  // de TODAS as redes, e um select que mistura tenants oferece a ele a
+  // escolha errada. Com o tenant na mao, o formulario filtra antes de
+  // oferecer, em vez de recusar depois de escolhido.
   const { data, error } = await supabase
     .from('lojas')
-    .select('id, nome, codigo_loja, cidade, estado')
+    .select('id, nome, codigo_loja, cidade, estado, franqueado_id')
     .eq('status', 'ativo')
     .order('nome', { ascending: true });
 
@@ -676,4 +680,22 @@ export async function buscarAgendadoresAtivos(): Promise<Pick<Usuario, 'id' | 'n
 
   if (error) throw new Error(`Nao foi possivel carregar os agendadores: ${error.message}`);
   return usuarios ?? [];
+}
+
+/**
+ * Franqueados que o usuario logado pode gerenciar.
+ *
+ * Existe para o super admin: como ele nao pertence a tenant nenhum, cadastrar
+ * loja ou pessoa exige dizer de quem e. Para os outros papeis a lista nao e
+ * carregada — o tenant vem da sessao, e oferecer a escolha seria oferecer a
+ * chance de errar.
+ */
+export async function buscarFranqueados(): Promise<{ id: string; nome: string }[]> {
+  const { data, error } = await createClient()
+    .from('franqueados')
+    .select('id, nome')
+    .order('nome', { ascending: true });
+
+  if (error) throw new Error(`Nao foi possivel carregar os franqueados: ${error.message}`);
+  return data ?? [];
 }

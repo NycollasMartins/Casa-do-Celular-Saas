@@ -5,7 +5,7 @@ import { UsuarioDialog } from './novo-usuario-dialog';
 import { AcoesUsuario } from './acoes-usuario';
 import { exigirRole } from '@/lib/auth/session';
 import { createClient } from '@/lib/supabase/server';
-import { buscarLojasDoUsuario, lerPaginado } from '@/lib/supabase/queries';
+import { buscarFranqueados, buscarLojasDoUsuario, lerPaginado } from '@/lib/supabase/queries';
 import { ROLE_LABEL } from '@/lib/utils';
 import type { AgendadorLoja, ParticipacaoSocietaria, Usuario } from '@/lib/types/database';
 import { LinhaVazia } from '@/components/ui/linha-vazia';
@@ -31,7 +31,12 @@ export default async function UsuariosPage() {
   // logo abaixo depende disso: com a lista cortada, a pessoa com duas lotacoes
   // pode cair fora do pedaco lido e o aviso some — dizendo que esta tudo certo
   // justamente quando nao esta.
-  const [usuarios, lojas, vinculos, participacoes] = await Promise.all([
+  // A lista de redes so e carregada para quem precisa dela. O franqueado tem
+  // o tenant na sessao; oferecer a escolha seria oferecer a chance de errar —
+  // e o RLS recusaria depois, com uma mensagem pior que a ausencia do campo.
+  const ehSuperAdmin = gestor.role === 'super_admin';
+
+  const [usuarios, lojas, vinculos, participacoes, franqueados] = await Promise.all([
     lerPaginado<Usuario>(
       (de, ate) =>
         supabase
@@ -62,6 +67,7 @@ export default async function UsuariosPage() {
           .range(de, ate),
       { oQue: 'as participacoes' }
     ),
+    ehSuperAdmin ? buscarFranqueados() : Promise.resolve([]),
   ]);
 
   // Um vinculo por pessoa e a regra. Mais de um acontece quando
@@ -104,7 +110,7 @@ export default async function UsuariosPage() {
             {usuarios.length > ativos ? `, ${usuarios.length - ativos} encerrado(s)` : ''}.
           </p>
         </div>
-        <UsuarioDialog lojas={lojas} />
+        <UsuarioDialog lojas={lojas} franqueados={ehSuperAdmin ? franqueados : undefined} />
       </div>
 
       {lotacaoDuplicada.length > 0 ? (

@@ -7,18 +7,25 @@ import { LojaDialog } from './nova-loja-dialog';
 import { exigirRole } from '@/lib/auth/session';
 import { createClient } from '@/lib/supabase/server';
 import type { Loja } from '@/lib/types/database';
-import { lerPaginado } from '@/lib/supabase/queries';
+import { buscarFranqueados, lerPaginado } from '@/lib/supabase/queries';
 
 export const metadata = { title: 'Lojas · Casa do Celular' };
 
 export default async function LojasPage() {
-  await exigirRole(['super_admin', 'franqueado']);
+  const gestor = await exigirRole(['super_admin', 'franqueado']);
   const supabase = createClient();
 
-  const lojas = await lerPaginado<Loja>(
-    (de, ate) => supabase.from('lojas').select('*').order('codigo_loja').range(de, ate),
-    { oQue: 'as lojas' }
-  );
+  // Ver o comentario em UsuarioDialog: a escolha de rede so existe para quem
+  // nao tem uma na sessao.
+  const ehSuperAdmin = gestor.role === 'super_admin';
+
+  const [lojas, franqueados] = await Promise.all([
+    lerPaginado<Loja>(
+      (de, ate) => supabase.from('lojas').select('*').order('codigo_loja').range(de, ate),
+      { oQue: 'as lojas' }
+    ),
+    ehSuperAdmin ? buscarFranqueados() : Promise.resolve([]),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -27,7 +34,7 @@ export default async function LojasPage() {
           <h1 className="text-2xl font-semibold text-ink">Lojas</h1>
           <p className="mt-1 text-sm text-slate-500">{lojas.length} lojas cadastradas.</p>
         </div>
-        <LojaDialog />
+        <LojaDialog franqueados={ehSuperAdmin ? franqueados : undefined} />
       </div>
 
       <Card>

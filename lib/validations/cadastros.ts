@@ -2,6 +2,10 @@ import { z } from 'zod';
 import { ehDataIso } from '@/lib/semana';
 
 export const lojaSchema = z.object({
+  // So o super admin preenche: ele nao pertence a tenant nenhum, entao
+  // precisa dizer de quem e a loja. Para os demais o campo e ignorado pela
+  // action, que usa o tenant da sessao.
+  franqueado_id: z.string().uuid('Escolha o franqueado').optional(),
   nome: z.string().trim().min(3, 'Informe o nome da loja'),
   codigo_loja: z
     .string()
@@ -16,6 +20,8 @@ export const lojaSchema = z.object({
 });
 
 export const usuarioSchema = z.object({
+  // Idem lojaSchema: presente so no formulario do super admin.
+  franqueado_id: z.string().uuid('Escolha o franqueado').optional(),
   nome: z.string().trim().min(3, 'Informe o nome'),
   email: z.string().trim().email('E-mail invalido'),
   role: z.enum(['franqueado', 'diretor', 'agendador']),

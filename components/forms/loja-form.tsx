@@ -15,10 +15,20 @@ import type { Loja } from '@/lib/types/database';
 
 interface Props {
   loja?: Loja;
+  /**
+   * So o super admin recebe esta lista, e so na CRIACAO.
+   *
+   * Ele nao pertence a rede nenhuma, entao sem escolher nao ha tenant para a
+   * loja. Na edicao o campo nao aparece de proposito: mudar a rede de uma
+   * loja que ja tem agendamentos deixaria o historico apontando para o lugar
+   * errado, e isso nao e um campo de formulario.
+   */
+  franqueados?: { id: string; nome: string }[];
   onSalvo?: () => void;
 }
 
-export function LojaForm({ loja, onSalvo }: Props) {
+export function LojaForm({ loja, franqueados, onSalvo }: Props) {
+  const escolheRede = Boolean(franqueados) && !loja;
   const router = useRouter();
   const {
     register,
@@ -41,7 +51,14 @@ export function LojaForm({ loja, onSalvo }: Props) {
   });
 
   async function aoEnviar(valores: LojaInput) {
+    if (escolheRede && !valores.franqueado_id) {
+      toast.error('Escolha o franqueado desta loja.');
+      return;
+    }
+
     const formData = new FormData();
+    // `?? ''` e nao `String(undefined)`: um campo opcional vazio precisa
+    // chegar vazio, nao com a palavra "undefined" dentro.
     Object.entries(valores).forEach(([chave, valor]) => formData.append(chave, String(valor ?? '')));
 
     const resultado = await salvarLoja(formData, loja?.id);
@@ -57,6 +74,31 @@ export function LojaForm({ loja, onSalvo }: Props) {
 
   return (
     <form onSubmit={handleSubmit(aoEnviar)} className="grid grid-cols-1 gap-4 sm:grid-cols-2" noValidate>
+      {escolheRede ? (
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label htmlFor="franqueado_id">Franqueado</Label>
+          <Select
+            value={watch('franqueado_id') ?? ''}
+            onValueChange={(valor) => setValue('franqueado_id', valor)}
+          >
+            <SelectTrigger
+              id="franqueado_id"
+              {...propsDeValidacao('franqueado_id', errors.franqueado_id?.message)}
+            >
+              <SelectValue placeholder="Escolha a rede desta loja" />
+            </SelectTrigger>
+            <SelectContent>
+              {franqueados!.map((franqueado) => (
+                <SelectItem key={franqueado.id} value={franqueado.id}>
+                  {franqueado.nome}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <MensagemErro id="franqueado_id" mensagem={errors.franqueado_id?.message} />
+        </div>
+      ) : null}
+
       <div className="space-y-1.5 sm:col-span-2">
         <Label htmlFor="nome">Nome da loja</Label>
         <Input

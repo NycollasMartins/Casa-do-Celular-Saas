@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidar as revalidarTelas } from '@/lib/revalidacao';
+import { resolverTenant } from '@/lib/tenant';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { usuarioComAcesso, podeGerenciarCadastros, podeGerenciarUsuario } from '@/lib/auth/session';
@@ -37,6 +38,26 @@ function objeto(formData: FormData): Record<string, string> {
 
 /* ------------------------------- Lojas ------------------------------- */
 
+/**
+ * Resposta das duas escritas de loja. Existe para a edicao e a criacao nao
+ * divergirem no tratamento de erro — foi o que aconteceu quando o caminho de
+ * criacao ganhou a escolha de tenant e passou a sair mais cedo.
+ */
+function respostaDeLoja(erro: { code?: string; message: string } | null, sucesso: string): ResultadoAction {
+  if (erro) {
+    return {
+      sucesso: false,
+      mensagem:
+        erro.code === '23505'
+          ? 'Ja existe uma loja com esse codigo.'
+          : `Nao foi possivel salvar: ${erro.message}`,
+    };
+  }
+
+  revalidarTelas('loja');
+  return { sucesso: true, mensagem: sucesso };
+}
+
 export async function salvarLoja(formData: FormData, id?: string): Promise<ResultadoAction> {
   const usuario = await usuarioComAcesso();
   if (!usuario || !podeGerenciarCadastros(usuario.role)) {
@@ -52,29 +73,46 @@ export async function salvarLoja(formData: FormData, id?: string): Promise<Resul
   }
 
   const supabase = createClient();
+
+  // O tenant sai do objeto salvo e passa a ser decidido aqui. Junto no
+  // `insert` ele vinha do formulario para QUALQUER papel, e no `update` a
+  // adicao do campo ao schema o traria junto — trocar a rede de uma loja que
+  // ja tem agendamentos deixaria o historico apontando para o lugar errado.
+  const { franqueado_id: redeEscolhida, ...campos } = parsed.data;
+
   const dados = {
-    ...parsed.data,
-    endereco: parsed.data.endereco || null,
-    telefone: parsed.data.telefone || null,
-    gerente_nome: parsed.data.gerente_nome || null,
+    ...campos,
+    endereco: campos.endereco || null,
+    telefone: campos.telefone || null,
+    gerente_nome: campos.gerente_nome || null,
   };
 
-  const { error } = id
-    ? await supabase.from('lojas').update(dados).eq('id', id)
-    : await supabase
-        .from('lojas')
-        .insert({ ...dados, franqueado_id: String(formData.get('franqueado_id') ?? usuario.franqueado_id) });
+  if (id) {
+    const { error: erroEdicao } = await supabase.from('lojas').update(dados).eq('id', id);
+    return respostaDeLoja(erroEdicao, 'Loja atualizada.');
+  }
 
-  if (error) {
-    const duplicado = error.code === '23505';
+  // Quem tem tenant na sessao usa o dela, e so. O campo do formulario vale
+  // apenas para o super admin, que nao pertence a rede nenhuma — aceitar o
+  // valor de quem tem tenant seria deixar o cliente escolher em que rede
+  // escreve, e a unica coisa entre isso e uma loja na rede errada seria a
+  // policy lojas_insert.
+  const franqueadoId = resolverTenant(usuario, redeEscolhida);
+
+  if (!franqueadoId) {
     return {
       sucesso: false,
-      mensagem: duplicado ? 'Ja existe uma loja com esse codigo.' : `Nao foi possivel salvar: ${error.message}`,
+      mensagem:
+        usuario.role === 'super_admin'
+          ? 'Escolha o franqueado desta loja.'
+          : 'Usuario sem franqueado vinculado.',
+      erros: { franqueado_id: ['Campo obrigatorio'] },
     };
   }
 
-  revalidarTelas('loja');
-  return { sucesso: true, mensagem: id ? 'Loja atualizada.' : 'Loja criada.' };
+  const { error } = await supabase.from('lojas').insert({ ...dados, franqueado_id: franqueadoId });
+
+  return respostaDeLoja(error, 'Loja criada.');
 }
 
 /* ------------------------------ Usuarios ----------------------------- */
@@ -106,12 +144,18 @@ export async function criarUsuario(formData: FormData): Promise<ResultadoAction>
   // a conta em auth.users — e service role ignora RLS. Confiar num campo que
   // o cliente envia permitia a um franqueado criar usuario dentro do tenant
   // de outro, sem nenhuma barreira no caminho.
-  const franqueadoId =
-    gestor.role === 'super_admin'
-      ? String(formData.get('franqueado_id') ?? '')
-      : String(gestor.franqueado_id ?? '');
+  const franqueadoId = resolverTenant(gestor, dados.franqueado_id);
 
-  if (!franqueadoId) return { sucesso: false, mensagem: 'Franqueado nao identificado.' };
+  if (!franqueadoId) {
+    return {
+      sucesso: false,
+      mensagem:
+        gestor.role === 'super_admin'
+          ? 'Escolha o franqueado desta pessoa.'
+          : 'Franqueado nao identificado.',
+      erros: { franqueado_id: ['Campo obrigatorio'] },
+    };
+  }
 
   // Mesma razao para a loja: sem RLS no caminho, um loja_id de outro tenant
   // criaria vinculo cruzado. O trigger vinculo_exige_mesmo_tenant barra no

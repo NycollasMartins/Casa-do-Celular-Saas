@@ -30,7 +30,14 @@ const UsuarioForm = dynamic(
   { loading: () => <Skeleton className="h-72 w-full" /> }
 );
 
-export function UsuarioDialog({ lojas }: { lojas: { id: string; nome: string }[] }) {
+export function UsuarioDialog({
+  lojas,
+  franqueados,
+}: {
+  lojas: { id: string; nome: string; franqueado_id: string }[];
+  /** So chega preenchida para o super admin; ver UsuarioForm. */
+  franqueados?: { id: string; nome: string }[];
+}) {
   const [aberto, setAberto] = useState(false);
   const [credencial, setCredencial] = useState<{ email: string; senha: string } | null>(null);
 
@@ -53,6 +60,7 @@ export function UsuarioDialog({ lojas }: { lojas: { id: string; nome: string }[]
         </DialogHeader>
         <UsuarioForm
           lojas={lojas}
+          franqueados={franqueados}
           onSalvo={(nova) => {
             setAberto(false);
             if (nova) setCredencial(nova);

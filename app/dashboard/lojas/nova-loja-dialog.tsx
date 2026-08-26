@@ -28,7 +28,16 @@ const LojaForm = dynamic(
   { loading: () => <Skeleton className="h-72 w-full" /> }
 );
 
-export function LojaDialog({ loja, gatilho }: { loja?: Loja; gatilho?: React.ReactNode }) {
+export function LojaDialog({
+  loja,
+  gatilho,
+  franqueados,
+}: {
+  loja?: Loja;
+  gatilho?: React.ReactNode;
+  /** So chega preenchida para o super admin; ver LojaForm. */
+  franqueados?: { id: string; nome: string }[];
+}) {
   const [aberto, setAberto] = useState(false);
 
   return (
@@ -48,7 +57,7 @@ export function LojaDialog({ loja, gatilho }: { loja?: Loja; gatilho?: React.Rea
             O codigo identifica a loja nos relatorios e precisa ser unico na rede.
           </DialogDescription>
         </DialogHeader>
-        <LojaForm loja={loja} onSalvo={() => setAberto(false)} />
+        <LojaForm loja={loja} franqueados={franqueados} onSalvo={() => setAberto(false)} />
       </DialogContent>
     </Dialog>
   );
