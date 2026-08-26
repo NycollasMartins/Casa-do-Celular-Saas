@@ -349,6 +349,19 @@ npm run test:rls   # so as permissoes, precisa do seed
 npm run test:e2e   # navegador de verdade, sobe o app na porta 3100
 ```
 
+Duas suítes, com dependências diferentes:
+
+- **`publico.spec.ts`** não precisa de login. Cobre o portão — rota protegida
+  manda para o login preservando o destino, rota inexistente não vaza,
+  `/privacidade` e `/api/saude` abrem sem sessão — mais os cabeçalhos de
+  segurança e a mensagem genérica de credencial errada, que não pode revelar
+  se o e-mail existe.
+- **`fluxo-critico.spec.ts` e `acesso.spec.ts`** autenticam como os usuários
+  do seed e se pulam quando ele não existe.
+
+A primeira existe porque a segunda nunca rodou: sem o seed, o navegador não
+exercitava esta aplicação em lugar nenhum.
+
 **Unitários** cobrem validação de CPF pelo dígito verificador, máscaras,
 schemas e o rate limit em memória. Rodam em qualquer lugar, sem rede.
 
