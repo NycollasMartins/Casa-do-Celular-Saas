@@ -557,7 +557,8 @@ begin
     v_erro := 'passou';
   exception when others then v_erro := 'barrou';
   end;
-  perform pg_temp.checar('INSERT com RETURNING e barrado pelo RLS', 'barrou', v_erro);
+  perform pg_temp.checar('RETURNING e barrado quando a linha nova E o escopo', 'barrou', v_erro);
+
 
   perform pg_temp.checar('e passa a enxerga-la', '1',
     (select count(*)::text from public.lojas));
@@ -1005,6 +1006,49 @@ begin
   reset role;
   perform pg_temp.checar('franqueado apaga meta do proprio time', '0',
     (select count(*)::text from public.metas where usuario_id = v_ag and competencia = v_comp));
+end $$;
+
+-- ============ o outro lado do RETURNING ============
+--
+-- A assercao "RETURNING e barrado quando a linha nova E o escopo", sozinha,
+-- sugere que `RETURNING` nunca funciona sob RLS. Nao e isso — e a leitura
+-- errada custaria caro: `transferirParticipacao` faz
+-- `.insert(...).select('id').single()` para saber o que desfazer se o
+-- encerramento da origem falhar. Quem lesse so a de cima "consertaria" um
+-- codigo que esta certo, e tiraria o rollback junto.
+--
+-- A regra de verdade e mais estreita: falha quando a linha inserida e a
+-- PROPRIA coisa que define o escopo — uma loja nova, que `lojas_permitidas()`
+-- ainda nao enxerga. Com o escopo ja existente, funciona.
+do $$
+declare v_dono uuid; v_dir uuid; v_loja uuid; v_nova uuid; v_erro text;
+begin
+  select id into v_dono from auth.users where email = 'dono@franqueado.com.br';
+  select id into v_dir  from auth.users where email = 'diretor1@franqueado.com.br';
+
+  -- Uma loja do tenant onde o diretor ainda NAO participa.
+  select l.id into v_loja from public.lojas l
+   where not exists (
+     select 1 from public.participacoes_societarias p
+      where p.loja_id = l.id and p.usuario_id = v_dir and p.data_fim is null)
+   limit 1;
+
+  perform set_config('request.jwt.claim.sub', v_dono::text, false);
+  set role authenticated;
+
+  begin
+    insert into public.participacoes_societarias
+      (usuario_id, loja_id, percentual_participacao, cargo, data_inicio)
+    values (v_dir, v_loja, 25, 'diretor', current_date)
+    returning id into v_nova;
+    v_erro := 'devolveu';
+  exception when others then v_erro := 'barrou';
+  end;
+
+  perform pg_temp.checar('RETURNING funciona quando o escopo ja existe', 'devolveu', v_erro);
+
+  reset role;
+  delete from public.participacoes_societarias where id = v_nova;
 end $$;
 
 -- Desfaz o que as asserçoes escreveram, para poderem rodar de novo.

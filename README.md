@@ -408,9 +408,9 @@ npm run verificar:banco
 
 Cria um banco descartável no PostgreSQL local, reproduz o que o Supabase
 fornece (schema `auth`, `auth.uid()`, os papéis), aplica **todas** as
-migrations na ordem, popula o seed e roda **97 asserções**:
+migrations na ordem, popula o seed e roda **98 asserções**:
 
-- **71 de RLS**, impersonando cada papel — inclusive a tentativa de escalada
+- **72 de RLS**, impersonando cada papel — inclusive a tentativa de escalada
   de privilégio, que precisa ser barrada. **Todas** espelham afirmações de
   `tests/rls/*.test.ts`, que dependem do PostgREST e nunca rodaram — a
   correspondência é verificada por teste, não prometida em prosa.
@@ -444,7 +444,7 @@ nenhuma — e este sistema guarda nome, CPF e telefone de quem foi atendido.
 
 **O ensaio importa mais que a cópia.** Cópia que nunca foi restaurada é uma
 suposição. Com `--ensaio`, o arquivo é restaurado num banco novo e as mesmas
-**97 asserções** de comportamento rodam contra ele. Se a cópia estiver
+**98 asserções** de comportamento rodam contra ele. Se a cópia estiver
 truncada ou faltando o schema `auth`, elas acusam — os dois casos foram
 testados de propósito.
 
@@ -474,7 +474,7 @@ de uma vez e que repara aplicação parcial. Nenhuma das duas estava
 verificada. Se fossem falsas, a descoberta viria no pior lugar possível —
 erro no meio da execução, em produção, sem transação para desfazer.
 
-Três cenários, e em todos as 97 asserções de comportamento precisam passar
+Três cenários, e em todos as 98 asserções de comportamento precisam passar
 no fim:
 
 - **Aplicação parcial**: schema, RLS e seed prontos, mais algumas migrations
@@ -488,7 +488,7 @@ no fim:
 
 `.github/workflows/ci.yml` roda a cada push na `main` e em cada pull request:
 checagem de tipos, lint, testes unitários, build de produção e — num
-container Postgres descartável — as 14 migrations com as 97 asserções de RLS
+container Postgres descartável — as 14 migrations com as 98 asserções de RLS
 e funções. É o que impede uma migration quebrada chegar ao SQL Editor. A Netlify
 publica a partir da `main`, então sem essa verificação um commit que quebra o
 build vai direto para produção e só aparece quando alguém abre o sistema.
