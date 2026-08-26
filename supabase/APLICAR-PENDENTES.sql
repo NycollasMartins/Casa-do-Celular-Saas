@@ -1060,7 +1060,20 @@ with esperado(item, tipo, presente) as (
         where n.nspname = 'public' and p.proname = 'agendamentos_para_lembrete')),
     ('resumo_do_periodo',               'funcao',
       (select count(*) > 0 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-        where n.nspname = 'public' and p.proname = 'resumo_do_periodo'))
+        where n.nspname = 'public' and p.proname = 'resumo_do_periodo')),
+
+    -- As duas ultimas migrations nao criam objeto novo: uma troca o CORPO de
+    -- um trigger que ja existia, a outra troca uma policy. Conferir presenca
+    -- diria OK sem elas terem rodado — e sao justamente as duas que fecham
+    -- escalada de privilegio. Por isso aqui se olha o conteudo.
+    ('013 · super admin so por super admin', 'regra',
+      (select count(*) > 0 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'protege_campos_sensiveis_usuario'
+          and pg_get_functiondef(p.oid) like '%Apenas um super admin%')),
+    ('014 · metas escopadas pelo tenant',    'regra',
+      (select count(*) > 0 from pg_policies
+        where schemaname = 'public' and policyname = 'metas_write'
+          and qual like '%franqueado_id%'))
 )
 select
   case when presente then 'OK' else 'FALTANDO' end as situacao,
