@@ -168,7 +168,29 @@ with esperado(item, tipo, presente) as (
     ('014 · metas escopadas pelo tenant',    'regra',
       (select count(*) > 0 from pg_policies
         where schemaname = 'public' and policyname = 'metas_write'
-          and qual like '%franqueado_id%'))
+          and qual like '%franqueado_id%')),
+
+    -- 015 troca corpo de funcao e de policy, alem de criar duas funcoes e um
+    -- trigger. As duas primeiras linhas olham CONTEUDO: sem elas, suspender
+    -- assinatura nao suspende nada — e a tela nao acusa, porque as colunas de
+    -- status sempre existiram.
+    ('015 · rede suspensa corta o acesso',   'regra',
+      (select count(*) > 0 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'usuario_role'
+          and pg_get_functiondef(p.oid) like '%franqueados%')),
+    ('015 · loja suspensa barra escrita',    'regra',
+      (select count(*) > 0 from pg_policies
+        where schemaname = 'public' and policyname = 'agendamentos_insert'
+          and with_check like '%loja_ativa%')),
+    ('loja_ativa',                           'funcao',
+      (select count(*) > 0 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'loja_ativa')),
+    ('protege_status_do_franqueado',         'funcao',
+      (select count(*) > 0 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'protege_status_do_franqueado')),
+    ('trg_franqueados_status',               'trigger',
+      (select count(*) > 0 from pg_trigger
+        where tgrelid = to_regclass('public.franqueados') and tgname = 'trg_franqueados_status'))
 )
 select
   case when presente then 'OK' else 'FALTANDO' end as situacao,

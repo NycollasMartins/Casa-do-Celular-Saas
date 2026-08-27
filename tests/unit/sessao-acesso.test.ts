@@ -31,6 +31,9 @@ const perfil = {
 
 let linha: Record<string, unknown> | null = perfil;
 
+/** Situacao da rede do usuario. Ver a migration 015. */
+let rede: { status: string } | null = { status: 'ativo' };
+
 // `cache` do React so existe dentro de uma renderizacao de Server Component.
 // Fora dela e undefined, e o modulo nem carrega. Identidade e o dublê certo:
 // o que `cache` faz e memorizar por renderizacao, e no teste nao ha nenhuma.
@@ -42,9 +45,17 @@ vi.mock('react', async (importarOriginal) => ({
 vi.mock('@/lib/supabase/server', () => ({
   createClient: () => ({
     auth: { getUser: async () => ({ data: { user: { id: 'u1' } } }) },
-    from: () => ({
+    // A tabela importa: `usuarioComAcesso` faz duas leituras — a linha da
+    // pessoa e a situacao da rede dela.
+    from: (tabela: string) => ({
       select: () => ({
-        eq: () => ({ single: async () => ({ data: linha, error: null }) }),
+        eq: () => ({
+          single: async () => ({ data: linha, error: null }),
+          maybeSingle: async () => ({
+            data: tabela === 'franqueados' ? rede : linha,
+            error: null,
+          }),
+        }),
       }),
     }),
   }),
@@ -55,8 +66,35 @@ const { usuarioComAcesso } = await import('@/lib/auth/session');
 describe('usuarioComAcesso', () => {
   it('devolve quem esta ativo', async () => {
     linha = { ...perfil, status: 'ativo' };
+    rede = { status: 'ativo' };
 
     expect(await usuarioComAcesso()).toMatchObject({ id: 'u1', role: 'franqueado' });
+  });
+
+  it('recusa quando a assinatura da rede esta suspensa', async () => {
+    // Mesmo motivo do desligamento individual: `criarUsuario` grava com
+    // service role, onde o RLS nao alcanca. Sem esta guarda, o cliente
+    // cortado por falta de pagamento seguiria criando contas na propria rede.
+    linha = { ...perfil, status: 'ativo' };
+    rede = { status: 'inativo' };
+
+    expect(await usuarioComAcesso()).toBeNull();
+  });
+
+  it('recusa quando a rede esta pendente', async () => {
+    linha = { ...perfil, status: 'ativo' };
+    rede = { status: 'pendente' };
+
+    expect(await usuarioComAcesso()).toBeNull();
+  });
+
+  it('super admin nao depende de rede nenhuma', async () => {
+    // Ele nao tem franqueado_id. Barra-lo aqui trancaria para fora justamente
+    // quem reativa a rede suspensa.
+    linha = { ...perfil, role: 'super_admin', franqueado_id: null };
+    rede = null;
+
+    expect(await usuarioComAcesso()).toMatchObject({ role: 'super_admin' });
   });
 
   it('recusa quem foi desligado, mesmo com sessao valida', async () => {

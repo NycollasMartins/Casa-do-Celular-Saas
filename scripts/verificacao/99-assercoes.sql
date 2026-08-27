@@ -9,6 +9,13 @@ begin
   perform set_config('request.jwt.claim.sub', v_id::text, false);
 end $$;
 
+-- Sai da impersonacao. `pg_temp.como` deixa a claim setada, e ela vaza para
+-- o bloco seguinte: um preparo feito depois disso roda COMO a ultima pessoa
+-- impersonada, e as travas que olham `auth.uid()` disparam contra ele. Em
+-- Supabase de verdade esse caminho e o service role, que nao tem claim.
+create or replace function pg_temp.como_sistema() returns void
+language sql as $$ select set_config('request.jwt.claim.sub', '', false)::void $$;
+
 create temp table resultado(ordem serial, caso text, esperado text, obtido text, situacao text);
 
 -- O papel `authenticated` precisa gravar aqui durante a impersonacao.
@@ -1051,8 +1058,215 @@ begin
   delete from public.participacoes_societarias where id = v_nova;
 end $$;
 
+-- ============ ASSINATURA: REDE E LOJA (migration 015) ============
+--
+-- As duas colunas de status existiam desde o primeiro dia e nunca foram
+-- conferidas. O que se mede aqui e o EFEITO — quantas linhas o papel enxerga
+-- e se a escrita passa — e nao a presenca da regra: policy escrita e policy
+-- aplicada ja divergiram neste banco.
+
+-- ---- rede suspensa corta LEITURA e ESCRITA ----
+do $$
+declare
+  v_franq uuid;
+  v_lojas_antes int; v_lojas_durante int; v_lojas_depois int;
+  v_escreveu text;
+  v_loja uuid; v_agendador uuid;
+begin
+  perform pg_temp.como_sistema();
+  select franqueado_id into v_franq from public.lojas limit 1;
+
+  perform pg_temp.como('dono@franqueado.com.br');
+  set role authenticated;
+  select count(*) into v_lojas_antes from public.lojas;
+  reset role;
+
+  perform pg_temp.como_sistema();
+  update public.franqueados set status = 'inativo' where id = v_franq;
+
+  perform pg_temp.como('dono@franqueado.com.br');
+  set role authenticated;
+  select count(*) into v_lojas_durante from public.lojas;
+  reset role;
+  perform pg_temp.como_sistema();
+
+  -- O agendador do mesmo tenant cai junto: a rede e a fronteira, nao o cargo.
+  perform pg_temp.como('agendador1.loja1@franqueado.com.br');
+  set role authenticated;
+  begin
+    select id into v_loja from public.lojas limit 1;
+    insert into public.agendamentos (franqueado_id, loja_id, agendador_id, cliente_nome,
+      cliente_cpf, cliente_telefone, data_agendamento, status)
+    values (v_franq, coalesce(v_loja, gen_random_uuid()), auth.uid(), 'Rede Suspensa',
+            '529.982.247-25', '(61) 90000-0000', current_date + 1, 'agendado');
+    v_escreveu := 'escreveu';
+  exception when others then
+    v_escreveu := 'barrou';
+  end;
+  reset role;
+  perform pg_temp.como_sistema();
+
+  update public.franqueados set status = 'ativo' where id = v_franq;
+
+  perform pg_temp.como('dono@franqueado.com.br');
+  set role authenticated;
+  select count(*) into v_lojas_depois from public.lojas;
+  reset role;
+
+  perform pg_temp.checar('rede ativa: franqueado ve as lojas', '9', v_lojas_antes::text);
+  perform pg_temp.checar('rede suspensa: franqueado nao ve nada', '0', v_lojas_durante::text);
+  perform pg_temp.checar('rede suspensa: agendador nao escreve', 'barrou', v_escreveu);
+  perform pg_temp.checar('reativar devolve tudo', '9', v_lojas_depois::text);
+end $$;
+
+-- ---- rede suspensa continua legivel pelo proprio dono ----
+do $$
+declare v_franq uuid; v_le int; v_ve_loja int;
+begin
+  perform pg_temp.como_sistema();
+  select franqueado_id into v_franq from public.lojas limit 1;
+  update public.franqueados set status = 'inativo' where id = v_franq;
+
+  perform pg_temp.como('dono@franqueado.com.br');
+  set role authenticated;
+  -- Sem esta leitura a aplicacao nao distingue "suspenso" de "vazio", e a
+  -- tela em branco parece defeito. Uma linha de nome e situacao, so.
+  select count(*) into v_le from public.franqueados where id = v_franq;
+  select count(*) into v_ve_loja from public.lojas;
+  reset role;
+
+  perform pg_temp.como_sistema();
+  update public.franqueados set status = 'ativo' where id = v_franq;
+
+  perform pg_temp.checar('rede suspensa: dono ainda le a propria rede', '1', v_le::text);
+  perform pg_temp.checar('mas nao volta a ver o negocio', '0', v_ve_loja::text);
+end $$;
+
+-- ---- super admin continua enxergando a rede suspensa ----
+do $$
+declare v_franq uuid; v_ve int; v_super uuid;
+begin
+  perform pg_temp.como_sistema();
+  select franqueado_id into v_franq from public.lojas limit 1;
+
+  -- O seed nao tem super admin: ele nasce aqui e morre no fim do bloco. Usar
+  -- um e-mail inexistente deixaria `auth.uid()` nulo, e a asserção passaria
+  -- medindo a coisa errada.
+  insert into auth.users (email) values ('super@rede.com.br') returning id into v_super;
+  insert into public.usuarios (id, email, nome, role, franqueado_id)
+  values (v_super, 'super@rede.com.br', 'Super da Rede', 'super_admin', null);
+
+  update public.franqueados set status = 'inativo' where id = v_franq;
+
+  -- Sem isto nao havia como desfazer: quem suspende precisa continuar vendo.
+  perform set_config('request.jwt.claim.sub', v_super::text, false);
+  set role authenticated;
+  select count(*) into v_ve from public.franqueados where id = v_franq;
+  reset role;
+  perform pg_temp.como_sistema();
+
+  update public.franqueados set status = 'ativo' where id = v_franq;
+  delete from public.usuarios where id = v_super;
+  delete from auth.users where id = v_super;
+
+  perform pg_temp.checar('super admin ve a rede que suspendeu', '1', v_ve::text);
+end $$;
+
+-- ---- loja suspensa: bloqueia escrita, PRESERVA leitura ----
+do $$
+declare
+  v_loja uuid; v_franq uuid; v_agendador uuid;
+  v_historico_antes int; v_historico_durante int;
+  v_escreveu text; v_editou text; v_id uuid;
+begin
+  perform pg_temp.como_sistema();
+  select l.id, l.franqueado_id into v_loja, v_franq
+  from public.lojas l join public.agendadores_lojas a on a.loja_id = l.id
+  where a.data_fim is null order by l.nome limit 1;
+
+  select usuario_id into v_agendador from public.agendadores_lojas
+  where loja_id = v_loja and data_fim is null limit 1;
+
+  insert into public.agendamentos (franqueado_id, loja_id, agendador_id, cliente_nome,
+    cliente_cpf, cliente_telefone, data_agendamento, status)
+  values (v_franq, v_loja, v_agendador, 'Historico da Loja', '529.982.247-25',
+          '(61) 91111-0000', current_date - 5, 'compareceu')
+  returning id into v_id;
+
+  perform pg_temp.como('dono@franqueado.com.br');
+  set role authenticated;
+  select count(*) into v_historico_antes from public.agendamentos where loja_id = v_loja;
+  reset role;
+  perform pg_temp.como_sistema();
+
+  update public.lojas set status = 'inativo' where id = v_loja;
+
+  perform pg_temp.como('dono@franqueado.com.br');
+  set role authenticated;
+  -- O ponto da regra: quem segue pagando nao perde meses de medicao porque
+  -- cancelou UMA unidade.
+  select count(*) into v_historico_durante from public.agendamentos where loja_id = v_loja;
+
+  begin
+    update public.agendamentos set observacoes = 'tentativa' where id = v_id;
+    get diagnostics v_editou = row_count;
+    v_editou := case when v_editou::int > 0 then 'editou' else 'barrou' end;
+  exception when others then
+    v_editou := 'barrou';
+  end;
+  reset role;
+
+  perform pg_temp.como('agendador1.loja1@franqueado.com.br');
+  set role authenticated;
+  begin
+    insert into public.agendamentos (franqueado_id, loja_id, agendador_id, cliente_nome,
+      cliente_cpf, cliente_telefone, data_agendamento, status)
+    values (v_franq, v_loja, auth.uid(), 'Loja Cancelada', '529.982.247-25',
+            '(61) 92222-0000', current_date + 1, 'agendado');
+    v_escreveu := 'escreveu';
+  exception when others then
+    v_escreveu := 'barrou';
+  end;
+  reset role;
+  perform pg_temp.como_sistema();
+
+  update public.lojas set status = 'ativo' where id = v_loja;
+  delete from public.agendamentos where id = v_id;
+
+  perform pg_temp.checar('loja suspensa: historico continua visivel',
+    v_historico_antes::text, v_historico_durante::text);
+  perform pg_temp.checar('loja suspensa: nao aceita agendamento novo', 'barrou', v_escreveu);
+  perform pg_temp.checar('loja suspensa: nao aceita edicao', 'barrou', v_editou);
+end $$;
+
+-- ---- franqueado nao se reativa sozinho ----
+do $$
+declare v_franq uuid; v_tentou text; v_status_final text;
+begin
+  perform pg_temp.como_sistema();
+  select franqueado_id into v_franq from public.lojas limit 1;
+
+  perform pg_temp.como('dono@franqueado.com.br');
+  set role authenticated;
+  begin
+    update public.franqueados set status = 'inativo' where id = v_franq;
+    v_tentou := 'passou';
+  exception when others then
+    v_tentou := 'barrou';
+  end;
+  reset role;
+
+  select status into v_status_final from public.franqueados where id = v_franq;
+
+  perform pg_temp.checar('franqueado nao muda a situacao da propria rede', 'barrou', v_tentou);
+  perform pg_temp.checar('e a rede continua ativa', 'ativo', v_status_final);
+end $$;
+
 -- Desfaz o que as asserçoes escreveram, para poderem rodar de novo.
 reset role;
+select pg_temp.como_sistema();
+delete from public.agendamentos where cliente_nome in
+  ('Rede Suspensa', 'Loja Cancelada', 'Historico da Loja');
 delete from public.vendas where valor in (1500.50, 200, 100);
 
 \pset tuples_only off

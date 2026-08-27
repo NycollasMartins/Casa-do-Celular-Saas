@@ -23,6 +23,31 @@ export const buscarUsuarioAtual = cache(async (): Promise<Usuario | null> => {
 });
 
 /**
+ * A rede do usuario esta com a assinatura em dia?
+ *
+ * Super admin nao pertence a rede nenhuma e nunca e barrado — e ele quem
+ * suspende e reativa.
+ *
+ * A leitura funciona mesmo com a rede suspensa por causa da policy de 015:
+ * o proprio dono continua lendo a linha da rede dele, do mesmo jeito que o
+ * usuario desligado le a propria. Sem isso nao haveria como distinguir
+ * "suspenso" de "vazio", e a tela vazia parece defeito.
+ */
+export const redeAtiva = cache(async (usuario: Usuario): Promise<boolean> => {
+  if (usuario.role === 'super_admin' || !usuario.franqueado_id) return true;
+
+  const { data } = await createClient()
+    .from('franqueados')
+    .select('status')
+    .eq('id', usuario.franqueado_id)
+    .maybeSingle();
+
+  // Ausencia trata-se como suspensa: se nem a propria rede aparece, alguma
+  // coisa esta errada, e liberar no escuro e a escolha pior.
+  return data?.status === 'ativo';
+});
+
+/**
  * Usuario com acesso VIGENTE. E o que Server Action deve usar.
  *
  * POR QUE NAO BASTA `buscarUsuarioAtual`
@@ -47,6 +72,13 @@ export const buscarUsuarioAtual = cache(async (): Promise<Usuario | null> => {
 export async function usuarioComAcesso(): Promise<Usuario | null> {
   const usuario = await buscarUsuarioAtual();
   if (!usuario || usuario.status !== 'ativo') return null;
+
+  // A rede suspensa entra aqui pela mesma razao que o usuario desligado: o
+  // RLS ja barra as escritas normais, mas `criarUsuario` grava com service
+  // role. Sem esta linha, o cliente cortado por falta de pagamento ainda
+  // criaria contas dentro da propria rede.
+  if (!(await redeAtiva(usuario))) return null;
+
   return usuario;
 }
 
@@ -65,6 +97,12 @@ export async function exigirUsuario(): Promise<Usuario> {
     const supabase = createClient();
     await supabase.auth.signOut();
     redirect('/auth/login?erro=acesso_revogado');
+  }
+
+  if (!(await redeAtiva(usuario))) {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    redirect('/auth/login?erro=rede_suspensa');
   }
 
   return usuario;

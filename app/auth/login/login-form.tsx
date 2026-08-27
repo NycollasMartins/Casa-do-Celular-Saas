@@ -14,6 +14,8 @@ import { destinoSeguro } from '@/lib/rede';
 const ERRO_NA_URL: Record<string, string> = {
   link_invalido: 'O link expirou ou ja foi usado. Peca um novo.',
   acesso_revogado: 'Seu acesso foi encerrado. Fale com o responsavel pela sua loja.',
+  rede_suspensa:
+    'A assinatura da sua rede esta suspensa. Os dados continuam guardados: fale com quem contratou o sistema para reativar.',
 };
 
 export function LoginForm() {
