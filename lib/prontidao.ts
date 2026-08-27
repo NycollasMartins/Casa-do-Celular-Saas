@@ -105,6 +105,13 @@ async function sondarSchema(): Promise<ItemDeSchema[]> {
     ['metas', '009', tabelaExiste('metas')],
     ['envios_relatorio', '010', tabelaExiste('envios_relatorio')],
     ['convites', '016', tabelaExiste('convites')],
+    ['cobrancas', '017', tabelaExiste('cobrancas')],
+    ['franqueados.assinatura_vence_em', '017', colunaExiste('franqueados', 'assinatura_vence_em')],
+    [
+      'franqueados.assinatura_avisado_em',
+      '017',
+      colunaExiste('franqueados', 'assinatura_avisado_em'),
+    ],
     [
       'agendamentos_para_lembrete',
       '007',

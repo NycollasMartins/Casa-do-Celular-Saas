@@ -18,6 +18,7 @@ import { planejarVinculos, selecionarParaReabrir, tabelaDoVinculo } from '@/lib/
 import { ehDataIso, hojeNaLoja } from '@/lib/semana';
 import type { ResultadoAction } from './agendamentos';
 import { lerPaginado } from '@/lib/supabase/queries';
+import { formatarDataIso } from '@/lib/utils';
 
 /**
  * Hoje para as colunas `date`. Delega a fonte unica: toISOString devolveria
@@ -593,6 +594,42 @@ export async function salvarFranqueado(formData: FormData, id?: string): Promise
  * Encerrar preserva a linha: e o que mantem a leitura historica de quem
  * respondia por qual loja em cada periodo.
  */
+/**
+ * Registra o pagamento da assinatura de uma rede.
+ *
+ * POR QUE E UMA ACAO MANUAL
+ * Nao ha gateway de pagamento neste sistema. Quem confirma que o dinheiro
+ * entrou e voce, olhando o extrato — e e melhor assim do que fingir uma
+ * integracao que ninguem contratou.
+ *
+ * O trabalho pesado esta em `registrar_pagamento` (migration 017): avanca o
+ * vencimento mantendo o dia do mes, limpa o aviso e reativa a rede. Fica no
+ * banco porque as tres coisas precisam acontecer juntas — reativar sem
+ * limpar o aviso faria a rotina suspender de novo no dia seguinte.
+ */
+export async function registrarPagamento(id: string): Promise<ResultadoAction> {
+  const gestor = await usuarioComAcesso();
+
+  if (!gestor || gestor.role !== 'super_admin') {
+    return { sucesso: false, mensagem: 'Somente o administrador do sistema registra pagamentos.' };
+  }
+
+  const { data: novoVencimento, error } = await createClient().rpc('registrar_pagamento', {
+    p_id: id,
+    p_hoje: hoje(),
+  });
+
+  if (error) {
+    return { sucesso: false, mensagem: `Nao foi possivel registrar: ${error.message}` };
+  }
+
+  revalidarTelas('franqueado');
+  return {
+    sucesso: true,
+    mensagem: `Pagamento registrado. Proximo vencimento em ${formatarDataIso(String(novoVencimento))}.`,
+  };
+}
+
 export async function encerrarParticipacao(id: string, dataFim?: string): Promise<ResultadoAction> {
   const gestor = await usuarioComAcesso();
   if (!gestor || !podeGerenciarCadastros(gestor.role)) {

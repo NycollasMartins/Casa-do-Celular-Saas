@@ -133,6 +133,58 @@ export function canalDisponivel(destinatario, provedores) {
   return 'registro';
 }
 
+/* ----------------------------- Cobranca ------------------------------ */
+
+/**
+ * Dias entre o aviso e o corte.
+ *
+ * Espelhado no default de `franqueados_a_suspender` (migration 017). Se
+ * divergirem, o banco decide — a funcao SQL e quem filtra; este valor so
+ * viaja como argumento e aparece no texto do e-mail. O teste compara os dois.
+ */
+export const CARENCIA_DIAS = 3;
+
+/** dd/mm/aaaa, para texto que uma pessoa le. */
+export function dataPorExtensoCurta(iso) {
+  const [ano, mes, dia] = iso.slice(0, 10).split('-');
+  return `${dia}/${mes}/${ano}`;
+}
+
+/**
+ * Aviso de vencimento.
+ *
+ * Sem cobranca agressiva e sem ameaca no assunto: a maioria dos atrasos e
+ * esquecimento, e um assunto alarmante numa caixa de entrada corporativa
+ * costuma ir para o lixo eletronico. O prazo aparece como data, nao como
+ * "em 3 dias" — quem le dois dias depois faria a conta errada.
+ */
+export function montarAvisoDeCobranca({ nome, vencimento, limite }) {
+  return {
+    assunto: `Assinatura do sistema: vencimento em ${dataPorExtensoCurta(vencimento)}`,
+    texto:
+      `Ola! A assinatura de ${nome} venceu em ${dataPorExtensoCurta(vencimento)}.\n\n` +
+      `Para manter o acesso da equipe, o pagamento precisa ser feito ate ` +
+      `${dataPorExtensoCurta(limite)}. Depois dessa data o acesso e suspenso ` +
+      `automaticamente.\n\n` +
+      `Nenhum dado e apagado na suspensao: tudo volta como estava assim que o ` +
+      `pagamento for registrado.\n\n` +
+      `Se ja pagou, ignore esta mensagem.`,
+  };
+}
+
+/** Aviso de que o corte aconteceu. Diz como voltar, que e a unica informacao util agora. */
+export function montarAvisoDeSuspensao({ nome, vencimento }) {
+  return {
+    assunto: `Acesso suspenso: assinatura de ${nome}`,
+    texto:
+      `O acesso ao sistema foi suspenso por falta de pagamento da assinatura ` +
+      `vencida em ${dataPorExtensoCurta(vencimento)}.\n\n` +
+      `Nada foi apagado. Assim que o pagamento for registrado, o acesso volta ` +
+      `com todo o historico, as lojas e a equipe como estavam.\n\n` +
+      `Entre em contato para regularizar.`,
+  };
+}
+
 /* ------------------------------ Leitura ------------------------------ */
 
 export const TAMANHO_PAGINA = 1000;

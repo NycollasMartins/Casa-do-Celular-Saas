@@ -5,6 +5,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { FranqueadoDialog } from './franqueado-dialog';
 import { ConvitesPainel } from './convites-painel';
+import { SituacaoDaAssinatura } from './acoes-assinatura';
+import { CARENCIA_DIAS } from '@/lib/cobranca';
 import { createClient } from '@/lib/supabase/server';
 import type { Convite, Franqueado } from '@/lib/types/database';
 import { LinhaVazia } from '@/components/ui/linha-vazia';
@@ -48,12 +50,13 @@ export default async function FranqueadosPage() {
                 <TableHead>CNPJ</TableHead>
                 <TableHead>Contato</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="text-right">Assinatura</TableHead>
                 <TableHead className="text-right">Acoes</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {franqueados.length === 0 ? (
-                <LinhaVazia colunas={5}>
+                <LinhaVazia colunas={6}>
                   Nenhum franqueado cadastrado. Crie o primeiro para a rede sair do zero.
                 </LinhaVazia>
               ) : (
@@ -64,6 +67,9 @@ export default async function FranqueadosPage() {
                     <TableCell className="text-slate-600">{franqueado.email_contato ?? '-'}</TableCell>
                     <TableCell>
                       <Badge variant={VARIANTE[franqueado.status]}>{franqueado.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <SituacaoDaAssinatura franqueado={franqueado} carenciaDias={CARENCIA_DIAS} />
                     </TableCell>
                     <TableCell className="text-right">
                       <FranqueadoDialog

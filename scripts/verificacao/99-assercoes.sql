@@ -1353,9 +1353,141 @@ begin
   perform pg_temp.checar('franqueado nao ve convite nenhum', '0', v_dono::text);
 end $$;
 
+-- ============ CICLO DE COBRANCA (migration 017) ============
+
+-- ---- quem entra na lista de aviso, e quem nao ----
+do $$
+declare
+  v_super uuid; v_cobravel uuid; v_gratuita uuid; v_avisada uuid; v_suspensa uuid;
+  v_hoje date := date '2026-09-10';
+  v_lista text;
+begin
+  perform pg_temp.como_sistema();
+  select id into v_super from public.usuarios where role = 'super_admin' limit 1;
+
+  insert into public.franqueados (nome, status, assinatura_vence_em)
+  values ('Rede Cobravel', 'ativo', v_hoje) returning id into v_cobravel;
+
+  -- Vencimento nulo e a rede do proprio dono do produto, ou cortesia. Sem
+  -- esta excecao, a primeira coisa que a rotina faria seria avisar voce.
+  insert into public.franqueados (nome, status, assinatura_vence_em)
+  values ('Rede Cortesia', 'ativo', null) returning id into v_gratuita;
+
+  insert into public.franqueados (nome, status, assinatura_vence_em, assinatura_avisado_em)
+  values ('Rede Ja Avisada', 'ativo', v_hoje, v_hoje) returning id into v_avisada;
+
+  insert into public.franqueados (nome, status, assinatura_vence_em)
+  values ('Rede Suspensa', 'inativo', v_hoje) returning id into v_suspensa;
+
+  select string_agg(nome, ', ' order by nome) into v_lista
+  from public.franqueados_a_avisar(v_hoje);
+
+  perform pg_temp.checar('so a rede cobravel entra no aviso', 'Rede Cobravel', coalesce(v_lista, 'nenhuma'));
+
+  -- Um dia antes do vencimento nao avisa: o aviso e no dia, nao antes.
+  select string_agg(nome, ', ') into v_lista
+  from public.franqueados_a_avisar(v_hoje - 1);
+  perform pg_temp.checar('vespera do vencimento nao avisa', 'nenhuma', coalesce(v_lista, 'nenhuma'));
+end $$;
+
+-- ---- a carencia: nem antes, nem nunca ----
+do $$
+declare
+  v_id uuid; v_aviso date := date '2026-09-10'; v_lista text;
+begin
+  perform pg_temp.como_sistema();
+  select id into v_id from public.franqueados where nome = 'Rede Ja Avisada';
+
+  -- Avisado no dia D, o cliente tem D, D+1 e D+2. O corte e em D+3.
+  select string_agg(nome, ', ') into v_lista
+  from public.franqueados_a_suspender(v_aviso + 2, 3);
+  perform pg_temp.checar('D+2 ainda esta dentro do prazo', 'nenhuma', coalesce(v_lista, 'nenhuma'));
+
+  select string_agg(nome, ', ') into v_lista
+  from public.franqueados_a_suspender(v_aviso + 3, 3);
+  perform pg_temp.checar('D+3 entra para suspensao', 'Rede Ja Avisada', coalesce(v_lista, 'nenhuma'));
+
+  -- Quem nunca foi avisado nunca e suspenso, por mais vencido que esteja.
+  -- E o caso da rede sem e-mail de contato, e da rotina rodando sem provedor.
+  select string_agg(nome, ', ') into v_lista
+  from public.franqueados_a_suspender(v_aviso + 400, 3)
+  where nome = 'Rede Cobravel';
+  perform pg_temp.checar('nunca avisado nunca e cortado', 'nenhuma', coalesce(v_lista, 'nenhuma'));
+end $$;
+
+-- ---- suspender e voltar ----
+do $$
+declare
+  v_id uuid; v_status_apos text; v_novo date; v_avisado date; v_status_final text;
+begin
+  perform pg_temp.como_sistema();
+  select id into v_id from public.franqueados where nome = 'Rede Ja Avisada';
+
+  perform public.suspender_por_inadimplencia(v_id);
+  select status into v_status_apos from public.franqueados where id = v_id;
+
+  -- O pagamento precisa fazer as tres coisas juntas: avancar o vencimento,
+  -- limpar o aviso e reativar. Reativar sem limpar o aviso faria a rotina
+  -- suspender de novo no dia seguinte.
+  select public.registrar_pagamento(v_id, date '2026-09-14', 30) into v_novo;
+  select status, assinatura_avisado_em into v_status_final, v_avisado
+  from public.franqueados where id = v_id;
+
+  perform pg_temp.checar('inadimplente e suspenso', 'inativo', v_status_apos);
+  perform pg_temp.checar('pagamento reativa', 'ativo', v_status_final);
+  perform pg_temp.checar('pagamento limpa o aviso', 'limpo',
+    case when v_avisado is null then 'limpo' else 'sujo' end);
+  -- Somado ao vencimento ANTIGO (10/09), nao a hoje (14/09): quem vence dia
+  -- 10 continua vencendo dia 10, em vez de ganhar dias a cada atraso.
+  perform pg_temp.checar('vencimento mantem o dia do mes', '2026-10-10', v_novo::text);
+end $$;
+
+-- ---- atraso grande recomeca de hoje ----
+do $$
+declare v_id uuid; v_novo date;
+begin
+  perform pg_temp.como_sistema();
+
+  insert into public.franqueados (nome, status, assinatura_vence_em)
+  values ('Rede Parada', 'inativo', date '2026-01-10') returning id into v_id;
+
+  -- Somar 30 dias a um vencimento de meses atras daria uma data ainda
+  -- vencida, e a rotina avisaria de novo no dia seguinte ao pagamento.
+  select public.registrar_pagamento(v_id, date '2026-09-14', 30) into v_novo;
+
+  perform pg_temp.checar('atraso grande reinicia o ciclo hoje', '2026-10-14', v_novo::text);
+end $$;
+
+-- ---- quem enxerga a propria cobranca ----
+do $$
+declare v_franq uuid; v_outra uuid; v_proprias int; v_alheias int;
+begin
+  perform pg_temp.como_sistema();
+  select franqueado_id into v_franq from public.lojas limit 1;
+  select id into v_outra from public.franqueados where nome = 'Rede Cobravel';
+
+  insert into public.cobrancas (franqueado_id, vencimento, tipo, status)
+  values (v_franq, date '2026-09-10', 'aviso', 'enviado'),
+         (v_outra, date '2026-09-10', 'aviso', 'enviado');
+
+  perform pg_temp.como('dono@franqueado.com.br');
+  set role authenticated;
+  select count(*) into v_proprias from public.cobrancas where franqueado_id = v_franq;
+  select count(*) into v_alheias  from public.cobrancas where franqueado_id = v_outra;
+  reset role;
+  perform pg_temp.como_sistema();
+
+  -- Ele recebeu o e-mail: esconder o registro na tela seria estranho.
+  perform pg_temp.checar('franqueado le a propria cobranca', '1', v_proprias::text);
+  perform pg_temp.checar('mas nao a de outra rede', '0', v_alheias::text);
+end $$;
+
 -- Desfaz o que as asserçoes escreveram, para poderem rodar de novo.
 reset role;
 select pg_temp.como_sistema();
+delete from public.cobrancas where vencimento = date '2026-09-10';
+delete from public.franqueados where nome in
+  ('Rede Cobravel', 'Rede Cortesia', 'Rede Ja Avisada', 'Rede Suspensa', 'Rede Parada');
 delete from public.convites where token_hash like 'hash-%';
 delete from public.usuarios where email = 'convidador@rede.com.br';
 delete from auth.users where email = 'convidador@rede.com.br';

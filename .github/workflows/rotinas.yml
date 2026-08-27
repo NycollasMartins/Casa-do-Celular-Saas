@@ -40,6 +40,10 @@ on:
     - cron: '0 11 * * 1'
     # 09:00 UTC do dia 1 = 06:00 em Sao Paulo. Varredura de retencao da LGPD.
     - cron: '0 9 1 * *'
+    # 12:00 UTC = 09:00 em Sao Paulo, todo dia. Cobranca da assinatura: manha
+    # de dia util e quando o financeiro do cliente le e-mail, e sobra o dia
+    # inteiro para ele reagir antes de o prazo andar.
+    - cron: '0 12 * * *'
 
   # Permite rodar a mao — inclusive em modo seco, que lista sem enviar.
   workflow_dispatch:
@@ -47,7 +51,7 @@ on:
       rotina:
         description: Qual rotina rodar
         type: choice
-        options: [lembrete, relatorio, retencao]
+        options: [lembrete, relatorio, retencao, cobranca]
         required: true
       seco:
         description: Modo seco (lista o que faria, nao envia)
@@ -217,4 +221,58 @@ jobs:
             npm run lgpd:reter -- --seco
           else
             npm run lgpd:reter -- ${{ steps.segredos.outputs.prazo }}
+          fi
+
+  cobranca:
+    name: Cobranca da assinatura
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '0 12 * * *')
+      || inputs.rotina == 'cobranca'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # ESTA ROTINA CORTA ACESSO, e a trava dela e o e-mail.
+      #
+      # A carencia so comeca quando o aviso SAI. Sem RESEND_API_KEY o script
+      # lista o que faria e nao marca ninguem como avisado — entao ninguem e
+      # suspenso. Nao e um efeito colateral: cortar a operacao de um cliente
+      # que nunca foi avisado, por uma configuracao que ele nao controla,
+      # seria o pior erro que este sistema poderia cometer.
+      - name: Verificar segredos
+        id: segredos
+        run: |
+          if [ -n "${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" ] && [ -n "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+            echo "presentes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "presentes=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Cobranca pulada: configure os segredos em Settings > Secrets."
+          fi
+          if [ -z "${{ secrets.RESEND_API_KEY }}" ]; then
+            echo "::warning::Sem RESEND_API_KEY nenhum aviso sai, e por isso nenhuma rede sera suspensa."
+          fi
+
+      - name: Instalar dependencias
+        if: steps.segredos.outputs.presentes == 'true'
+        run: npm ci
+
+      - name: Rodar
+        if: steps.segredos.outputs.presentes == 'true'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          REMETENTE_EMAIL: ${{ secrets.REMETENTE_EMAIL }}
+        run: |
+          if [ "${{ inputs.seco }}" = "true" ]; then
+            npm run cobranca -- --seco
+          else
+            npm run cobranca
           fi

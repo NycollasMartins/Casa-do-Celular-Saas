@@ -17,6 +17,7 @@
     "test:e2e": "playwright test",
     "test:e2e:publico": "playwright test tests/e2e/publico.spec.ts",
     "test:e2e:ui": "playwright test --ui",
+    "cobranca": "node scripts/cobranca.mjs",
     "lgpd:reter": "node scripts/anonimizar-antigos.mjs",
     "lembrete:vespera": "node scripts/lembrete-vespera.mjs",
     "relatorio:semanal": "node scripts/relatorio-semanal.mjs",

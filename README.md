@@ -293,6 +293,48 @@ link antes de o cliente digitar o primeiro campo.
 
 ---
 
+## Ciclo de cobrança
+
+Cada rede tem um vencimento. Redes criadas por convite nascem com **30 dias**;
+cada pagamento registrado empurra mais 30, **mantendo o dia do mês** — quem
+vence dia 10 e paga dia 12 continua vencendo dia 10.
+
+```
+vencimento ──► aviso por e-mail ──► 3 dias ──► suspensão automática
+                     │                              │
+                     └── pagamento registrado ──────┴──► volta ao normal
+```
+
+A rotina `npm run cobranca` roda todo dia às 9h (`.github/workflows/rotinas.yml`).
+No dia do vencimento ela envia o aviso; três dias depois, se nada foi pago,
+suspende a rede — o mesmo efeito da suspensão manual, sem ninguém lembrar.
+
+**A carência começa quando a mensagem sai, não no vencimento.** Se o provedor
+de e-mail estiver fora do ar por dois dias, o cliente perderia dois terços do
+prazo sem nunca ter sido avisado. Por isso `assinatura_avisado_em` é gravado
+**depois** do envio bem-sucedido — e falha de envio faz a rotina tentar de
+novo no dia seguinte, sem consumir prazo.
+
+**Sem `RESEND_API_KEY`, ninguém é suspenso.** Não é efeito colateral: sem
+canal não há aviso, e cortar a operação de um cliente que nunca soube que
+devia, por uma configuração que ele não controla, seria o pior erro que este
+sistema poderia cometer. A rotina lista o que faria e para. O mesmo vale para
+rede sem `email_contato` preenchido.
+
+**Vencimento nulo = rede não cobrada.** É o caso da sua própria rede e de
+cortesias. Sem isso, a primeira coisa que a rotina faria seria avisar você e
+depois se cortar.
+
+O pagamento é registrado **à mão**, em *Franqueados → Registrar pagamento*.
+Não há gateway integrado: quem confirma que o dinheiro entrou é você, olhando
+o extrato.
+
+Nada é apagado na suspensão. O histórico, as lojas e a equipe voltam como
+estavam assim que o pagamento for registrado — e as duas mensagens que o
+cliente recebe dizem isso, porque é a dúvida que gera o telefonema.
+
+---
+
 ## Suspender assinatura
 
 Duas colunas de status existiam desde o começo e não eram conferidas em lugar
@@ -515,7 +557,7 @@ npm run verificar:banco
 
 Cria um banco descartável no PostgreSQL local, reproduz o que o Supabase
 fornece (schema `auth`, `auth.uid()`, os papéis), aplica **todas** as
-migrations na ordem, popula o seed e roda **118 asserções**:
+migrations na ordem, popula o seed e roda **130 asserções**:
 
 - **72 de RLS**, impersonando cada papel — inclusive a tentativa de escalada
   de privilégio, que precisa ser barrada. **Todas** espelham afirmações de
@@ -551,7 +593,7 @@ nenhuma — e este sistema guarda nome, CPF e telefone de quem foi atendido.
 
 **O ensaio importa mais que a cópia.** Cópia que nunca foi restaurada é uma
 suposição. Com `--ensaio`, o arquivo é restaurado num banco novo e as mesmas
-**118 asserções** de comportamento rodam contra ele. Se a cópia estiver
+**130 asserções** de comportamento rodam contra ele. Se a cópia estiver
 truncada ou faltando o schema `auth`, elas acusam — os dois casos foram
 testados de propósito.
 
@@ -581,7 +623,7 @@ de uma vez e que repara aplicação parcial. Nenhuma das duas estava
 verificada. Se fossem falsas, a descoberta viria no pior lugar possível —
 erro no meio da execução, em produção, sem transação para desfazer.
 
-Três cenários, e em todos as 118 asserções de comportamento precisam passar
+Três cenários, e em todos as 130 asserções de comportamento precisam passar
 no fim:
 
 - **Aplicação parcial**: schema, RLS e seed prontos, mais algumas migrations
@@ -595,7 +637,7 @@ no fim:
 
 `.github/workflows/ci.yml` roda a cada push na `main` e em cada pull request:
 checagem de tipos, lint, testes unitários, build de produção e — num
-container Postgres descartável — as 16 migrations com as 118 asserções de RLS
+container Postgres descartável — as 17 migrations com as 130 asserções de RLS
 e funções. É o que impede uma migration quebrada chegar ao SQL Editor. A Netlify
 publica a partir da `main`, então sem essa verificação um commit que quebra o
 build vai direto para produção e só aparece quando alguém abre o sistema.

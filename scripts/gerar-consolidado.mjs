@@ -197,7 +197,31 @@ with esperado(item, tipo, presente) as (
         where n.nspname = 'public' and p.proname = 'reservar_convite')),
     ('liberar_convite',                      'funcao',
       (select count(*) > 0 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-        where n.nspname = 'public' and p.proname = 'liberar_convite'))
+        where n.nspname = 'public' and p.proname = 'liberar_convite')),
+    ('franqueados.assinatura_vence_em',      'coluna',
+      (select count(*) > 0 from information_schema.columns
+        where table_schema = 'public' and table_name = 'franqueados'
+          and column_name = 'assinatura_vence_em')),
+    ('franqueados.assinatura_avisado_em',    'coluna',
+      (select count(*) > 0 from information_schema.columns
+        where table_schema = 'public' and table_name = 'franqueados'
+          and column_name = 'assinatura_avisado_em')),
+    ('cobrancas',                            'tabela', (select to_regclass('public.cobrancas') is not null)),
+    ('franqueados_a_avisar',                 'funcao',
+      (select count(*) > 0 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'franqueados_a_avisar')),
+    ('franqueados_a_suspender',              'funcao',
+      (select count(*) > 0 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'franqueados_a_suspender')),
+    ('marcar_aviso_enviado',                 'funcao',
+      (select count(*) > 0 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'marcar_aviso_enviado')),
+    ('suspender_por_inadimplencia',          'funcao',
+      (select count(*) > 0 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'suspender_por_inadimplencia')),
+    ('registrar_pagamento',                  'funcao',
+      (select count(*) > 0 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'registrar_pagamento'))
 )
 select
   case when presente then 'OK' else 'FALTANDO' end as situacao,

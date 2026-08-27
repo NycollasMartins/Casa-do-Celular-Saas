@@ -48,12 +48,11 @@ const opcoesManuais = (arquivo.match(/options: \[([^\]]+)\]/)?.[1] ?? '')
   .map((o) => o.trim());
 
 describe('rotinas agendadas', () => {
-  it('as tres rotinas tem job', () => {
-    expect(Object.keys(jobs).sort()).toEqual(['lembrete', 'relatorio', 'retencao']);
-  });
-
   it('ha um cron para cada rotina', () => {
-    expect(crons).toHaveLength(3);
+    // Derivado, e nao cravado: um numero fixo aqui viraria mais uma lista da
+    // mesma verdade para divergir, e a comparacao entre jobs e o menu manual
+    // ja e feita mais abaixo.
+    expect(crons).toHaveLength(Object.keys(jobs).length);
   });
 
   it.each(Object.entries(jobs))('o job %s esta amarrado a UM cron', (_nome, condicao) => {

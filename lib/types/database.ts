@@ -21,8 +21,23 @@ export type Franqueado = {
   telefone_contato: string | null;
   status: 'ativo' | 'inativo' | 'pendente';
   data_contrato: string | null;
+  /** Proximo vencimento. Nulo = rede nao cobrada (propria, cortesia). */
+  assinatura_vence_em: string | null;
+  /** Quando o aviso SAIU. E daqui que a carencia conta. */
+  assinatura_avisado_em: string | null;
   created_at: string;
   updated_at: string;
+};
+
+/** Evento do ciclo de cobranca (migration 017). */
+export type Cobranca = {
+  id: string;
+  franqueado_id: string;
+  vencimento: string;
+  tipo: 'aviso' | 'suspensao' | 'pagamento';
+  status: 'enviado' | 'falhou' | 'registrado';
+  detalhe: string | null;
+  criado_em: string;
 };
 
 export type Usuario = {
@@ -181,6 +196,7 @@ export type Database = {
       notificacoes: Tabela<Notificacao>;
       envios_relatorio: Tabela<EnvioRelatorio>;
       convites: Tabela<Convite>;
+      cobrancas: Tabela<Cobranca>;
     };
     Views: Record<string, never>;
     /**
@@ -204,6 +220,27 @@ export type Database = {
         Args: { meses: number };
         /** Quantos registros foram tratados. */
         Returns: number;
+      };
+      franqueados_a_avisar: {
+        Args: { p_hoje: string };
+        Returns: { id: string; nome: string; email_contato: string | null; vencimento: string }[];
+      };
+      marcar_aviso_enviado: {
+        Args: { p_id: string; p_hoje: string };
+        Returns: undefined;
+      };
+      franqueados_a_suspender: {
+        Args: { p_hoje: string; p_carencia?: number };
+        Returns: { id: string; nome: string; vencimento: string; avisado_em: string }[];
+      };
+      suspender_por_inadimplencia: {
+        Args: { p_id: string };
+        Returns: undefined;
+      };
+      registrar_pagamento: {
+        Args: { p_id: string; p_hoje: string; p_dias?: number };
+        /** Novo vencimento. */
+        Returns: string;
       };
       reservar_convite: {
         Args: { p_token_hash: string };
