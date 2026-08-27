@@ -39,6 +39,33 @@ test.describe('superficie publica', () => {
     await expect(page).toHaveURL(/\/privacidade$/);
   });
 
+  test('convite invalido nao abre o formulario, e nao diz por que', async ({ page }) => {
+    // Um token com o formato certo mas que nao existe no banco. A resposta e
+    // a mesma de expirado e de ja usado, de proposito: distinguir ajudaria
+    // mais quem esta testando tokens do que quem tem um convite legitimo.
+    const tokenFalso = 'a'.repeat(43);
+    const resposta = await page.goto(`/convite/${tokenFalso}`);
+
+    expect(resposta?.status()).toBe(200);
+    // Nao foi redirecionado para o login: a rota e aberta.
+    await expect(page).toHaveURL(new RegExp(`/convite/${tokenFalso}$`));
+    await expect(page.getByText(/Convite indisponivel/i)).toBeVisible();
+    // O formulario nao pode existir na pagina, nem escondido.
+    await expect(page.locator('#razao_social')).toHaveCount(0);
+    await expect(page.getByText(/expirado|ja ter sido usado/i)).toBeVisible();
+  });
+
+  test('token com formato invalido nem chega a consultar', async ({ page }) => {
+    // `pareceToken` filtra antes do banco. Sem isso, a rota publica seria um
+    // caminho barato de sondagem.
+    for (const lixo of ['abc', "' or 1=1--", 'a'.repeat(200)]) {
+      const resposta = await page.goto(`/convite/${encodeURIComponent(lixo)}`);
+
+      expect(resposta?.status()).toBe(200);
+      await expect(page.getByText(/Convite indisponivel/i)).toBeVisible();
+    }
+  });
+
   test('a conferencia de saude responde sem sessao', async ({ request }) => {
     // Ela precisa responder justamente quando ninguem consegue entrar.
     const resposta = await request.get('/api/saude');

@@ -267,6 +267,55 @@ aqui o único jeito de sair dele era rodar o seed.
 
 ---
 
+## Convite de rede
+
+Cadastrar cada cliente à mão coloca você no caminho crítico da venda. O
+convite tira: gere o link quando quiser — dez de uma vez, antes de existir
+cliente — e quem o recebe cria a própria rede e entra sozinho.
+
+Em **Franqueados → Convites**, *Gerar convite*. O link aparece **uma vez** e
+não volta: o banco guarda só o SHA-256 dele. Isso é deliberado — o token é
+uma credencial, e um dump da tabela não pode devolver convites utilizáveis.
+
+Vale 30 dias e serve para **um** cadastro. Quem abre preenche razão social,
+CNPJ (opcional), nome, e-mail e a própria senha; nasce a rede e a conta de
+`franqueado` dela. Sem link, ninguém se cadastra — não há auto-cadastro.
+
+O uso único não é conferido em duas etapas. `reservar_convite` confere e
+marca no **mesmo** `update`, então dois cliques no mesmo link — ou o link
+aberto em duas abas — não criam duas redes. Se a criação falhar no meio, o
+convite é devolvido: queimar o convite de um cliente que nem chegou a entrar
+seria o pior desfecho.
+
+Abrir a página **não** consome o convite. Se consumisse, o preview de um
+aplicativo de mensagem — que busca a URL para montar o cartão — queimaria o
+link antes de o cliente digitar o primeiro campo.
+
+---
+
+## Suspender assinatura
+
+Duas colunas de status existiam desde o começo e não eram conferidas em lugar
+nenhum. Desde a migration 015, valem:
+
+| Onde | O que acontece |
+|---|---|
+| *Franqueados* → Status **Inativo** | a rede inteira perde leitura e escrita |
+| *Lojas* → Status **Inativa** | a loja não recebe mais registro, e o histórico continua visível |
+
+A diferença é proposital. Rede suspensa é o cliente que parou de pagar —
+manter os relatórios de pé seria entregar o produto de graça. Loja suspensa é
+o franqueado que cancelou **uma** unidade e segue cliente nas outras;
+esconder o histórico dela apagaria meses de medição de quem continua pagando.
+
+A checagem da rede mora em `usuario_role()`, não em cada policy: tudo deriva
+dela, então uma linha vale por trinta. Quem é suspenso é deslogado com uma
+mensagem — sem isso veria telas vazias e concluiria que o sistema quebrou.
+
+Super admin fica de fora das duas: é ele quem reativa.
+
+---
+
 ### Tabelas
 
 | Tabela | Papel |
@@ -466,7 +515,7 @@ npm run verificar:banco
 
 Cria um banco descartável no PostgreSQL local, reproduz o que o Supabase
 fornece (schema `auth`, `auth.uid()`, os papéis), aplica **todas** as
-migrations na ordem, popula o seed e roda **110 asserções**:
+migrations na ordem, popula o seed e roda **118 asserções**:
 
 - **72 de RLS**, impersonando cada papel — inclusive a tentativa de escalada
   de privilégio, que precisa ser barrada. **Todas** espelham afirmações de
@@ -502,7 +551,7 @@ nenhuma — e este sistema guarda nome, CPF e telefone de quem foi atendido.
 
 **O ensaio importa mais que a cópia.** Cópia que nunca foi restaurada é uma
 suposição. Com `--ensaio`, o arquivo é restaurado num banco novo e as mesmas
-**110 asserções** de comportamento rodam contra ele. Se a cópia estiver
+**118 asserções** de comportamento rodam contra ele. Se a cópia estiver
 truncada ou faltando o schema `auth`, elas acusam — os dois casos foram
 testados de propósito.
 
@@ -532,7 +581,7 @@ de uma vez e que repara aplicação parcial. Nenhuma das duas estava
 verificada. Se fossem falsas, a descoberta viria no pior lugar possível —
 erro no meio da execução, em produção, sem transação para desfazer.
 
-Três cenários, e em todos as 110 asserções de comportamento precisam passar
+Três cenários, e em todos as 118 asserções de comportamento precisam passar
 no fim:
 
 - **Aplicação parcial**: schema, RLS e seed prontos, mais algumas migrations
@@ -546,7 +595,7 @@ no fim:
 
 `.github/workflows/ci.yml` roda a cada push na `main` e em cada pull request:
 checagem de tipos, lint, testes unitários, build de produção e — num
-container Postgres descartável — as 15 migrations com as 110 asserções de RLS
+container Postgres descartável — as 16 migrations com as 118 asserções de RLS
 e funções. É o que impede uma migration quebrada chegar ao SQL Editor. A Netlify
 publica a partir da `main`, então sem essa verificação um commit que quebra o
 build vai direto para produção e só aparece quando alguém abre o sistema.

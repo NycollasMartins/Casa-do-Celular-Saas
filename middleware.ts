@@ -19,6 +19,10 @@ const ROTAS_ABERTAS = [
   // e o erro mais importante de capturar e justamente o de quem nao
   // conseguiu autenticar.
   '/monitoring',
+  // Resgate de convite. Fica em ROTAS_ABERTAS, e nao em ROTAS_PUBLICAS, por
+  // duas razoes: quem chega aqui nao tem conta, e quem JA tem (voce, testando
+  // o proprio link) nao pode ser mandado para o dashboard antes de ver a tela.
+  '/convite',
 ];
 
 /** Exige sessao, mas nao pode ser bloqueada pela troca de senha obrigatoria. */

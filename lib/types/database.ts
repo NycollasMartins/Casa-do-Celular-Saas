@@ -137,6 +137,23 @@ export type MetaAgendador = {
   updated_at: string;
 };
 
+/**
+ * Convite de rede (migration 016).
+ *
+ * `token_hash` e o SHA-256 do token. O token em si nao existe no banco: ele
+ * aparece uma vez, na geracao, e some.
+ */
+export type Convite = {
+  id: string;
+  token_hash: string;
+  observacao: string | null;
+  criado_por: string;
+  criado_em: string;
+  expira_em: string;
+  usado_em: string | null;
+  franqueado_id: string | null;
+};
+
 /** Agendamento com os joins usados na tabela do dashboard. */
 export type AgendamentoComRelacoes = Agendamento & {
   loja: Pick<Loja, 'id' | 'nome' | 'codigo_loja'> | null;
@@ -163,6 +180,7 @@ export type Database = {
       metas: Tabela<MetaAgendador>;
       notificacoes: Tabela<Notificacao>;
       envios_relatorio: Tabela<EnvioRelatorio>;
+      convites: Tabela<Convite>;
     };
     Views: Record<string, never>;
     /**
@@ -186,6 +204,15 @@ export type Database = {
         Args: { meses: number };
         /** Quantos registros foram tratados. */
         Returns: number;
+      };
+      reservar_convite: {
+        Args: { p_token_hash: string };
+        /** Id do convite reservado, ou null quando invalido/expirado/usado. */
+        Returns: string | null;
+      };
+      liberar_convite: {
+        Args: { p_id: string };
+        Returns: undefined;
       };
       resumo_do_periodo: {
         Args: { p_franqueado_id: string; p_inicio: string; p_fim: string };

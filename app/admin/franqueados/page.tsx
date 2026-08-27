@@ -4,8 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { FranqueadoDialog } from './franqueado-dialog';
+import { ConvitesPainel } from './convites-painel';
 import { createClient } from '@/lib/supabase/server';
-import type { Franqueado } from '@/lib/types/database';
+import type { Convite, Franqueado } from '@/lib/types/database';
 import { LinhaVazia } from '@/components/ui/linha-vazia';
 import { lerPaginado } from '@/lib/supabase/queries';
 
@@ -15,10 +16,18 @@ const VARIANTE = { ativo: 'success', pendente: 'warning', inativo: 'neutral' } a
 
 export default async function FranqueadosPage() {
   const supabase = createClient();
-  const franqueados = await lerPaginado<Franqueado>(
-    (de, ate) => supabase.from('franqueados').select('*').order('nome').range(de, ate),
-    { oQue: 'os franqueados' }
-  );
+
+  const [franqueados, convites] = await Promise.all([
+    lerPaginado<Franqueado>(
+      (de, ate) => supabase.from('franqueados').select('*').order('nome').range(de, ate),
+      { oQue: 'os franqueados' }
+    ),
+    // A policy de `convites` exige super admin, e so ele alcanca esta rota.
+    lerPaginado<Convite>(
+      (de, ate) => supabase.from('convites').select('*').order('criado_em', { ascending: false }).range(de, ate),
+      { oQue: 'os convites' }
+    ),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -73,6 +82,8 @@ export default async function FranqueadosPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <ConvitesPainel convites={convites} />
     </div>
   );
 }

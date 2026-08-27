@@ -78,6 +78,7 @@ describe('a direcao inversa: telas que ninguem revalida', () => {
     '/auth/forgot-password': 'formulario',
     '/auth/nova-senha': 'formulario',
     '/admin/franqueados': 'coberta pelo grupo franqueado',
+    '/convite/[token]': 'formulario publico; o convite e lido a cada acesso (force-dynamic)',
   };
 
   const rotas = execSync('find app -name page.tsx', { encoding: 'utf8' })

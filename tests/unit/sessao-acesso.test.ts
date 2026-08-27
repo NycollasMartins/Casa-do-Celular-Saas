@@ -160,6 +160,9 @@ describe('quem usa qual guarda', () => {
     sair: 'encerra a sessao; exigir uma seria circular',
     enviarLinkDeRecuperacao: 'quem esqueceu a senha nao esta logado',
     definirNovaSenha: 'confere a sessao por conta propria, com getUser',
+    aceitarConvite:
+      'quem resgata convite ainda nao tem conta; a autorizacao e o token, ' +
+      'conferido por reservar_convite, e a rota tem teto por IP',
   };
 
   it('toda Server Action passa por usuarioComAcesso', () => {

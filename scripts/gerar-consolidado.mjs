@@ -190,7 +190,14 @@ with esperado(item, tipo, presente) as (
         where n.nspname = 'public' and p.proname = 'protege_status_do_franqueado')),
     ('trg_franqueados_status',               'trigger',
       (select count(*) > 0 from pg_trigger
-        where tgrelid = to_regclass('public.franqueados') and tgname = 'trg_franqueados_status'))
+        where tgrelid = to_regclass('public.franqueados') and tgname = 'trg_franqueados_status')),
+    ('convites',                             'tabela', (select to_regclass('public.convites') is not null)),
+    ('reservar_convite',                     'funcao',
+      (select count(*) > 0 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'reservar_convite')),
+    ('liberar_convite',                      'funcao',
+      (select count(*) > 0 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'liberar_convite'))
 )
 select
   case when presente then 'OK' else 'FALTANDO' end as situacao,

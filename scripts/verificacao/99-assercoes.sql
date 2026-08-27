@@ -1262,9 +1262,103 @@ begin
   perform pg_temp.checar('e a rede continua ativa', 'ativo', v_status_final);
 end $$;
 
+-- ============ CONVITE DE REDE (migration 016) ============
+
+-- ---- uso unico: a segunda tentativa nao passa ----
+do $$
+declare
+  v_super uuid; v_id1 uuid; v_id2 uuid; v_expirado uuid; v_inexistente uuid;
+begin
+  perform pg_temp.como_sistema();
+
+  insert into auth.users (email) values ('convidador@rede.com.br') returning id into v_super;
+  insert into public.usuarios (id, email, nome, role, franqueado_id)
+  values (v_super, 'convidador@rede.com.br', 'Convidador', 'super_admin', null);
+
+  insert into public.convites (token_hash, criado_por, expira_em)
+  values ('hash-valido', v_super, now() + interval '30 days');
+
+  -- Duas chamadas seguidas com o mesmo token: e o que acontece quando o
+  -- cliente da dois cliques, ou abre o link em duas abas. A conferencia e a
+  -- marcacao sao o MESMO update, entao a segunda nao encontra linha.
+  select public.reservar_convite('hash-valido') into v_id1;
+  select public.reservar_convite('hash-valido') into v_id2;
+
+  insert into public.convites (token_hash, criado_por, criado_em, expira_em)
+  values ('hash-expirado', v_super, now() - interval '60 days', now() - interval '1 day');
+  select public.reservar_convite('hash-expirado') into v_expirado;
+
+  select public.reservar_convite('hash-que-nao-existe') into v_inexistente;
+
+  perform pg_temp.checar('convite valido e reservado', 'reservou',
+    case when v_id1 is null then 'nulo' else 'reservou' end);
+  perform pg_temp.checar('o mesmo convite nao serve duas vezes', 'nulo',
+    case when v_id2 is null then 'nulo' else 'reservou' end);
+  perform pg_temp.checar('convite expirado nao serve', 'nulo',
+    case when v_expirado is null then 'nulo' else 'reservou' end);
+  perform pg_temp.checar('token inexistente nao serve', 'nulo',
+    case when v_inexistente is null then 'nulo' else 'reservou' end);
+end $$;
+
+-- ---- devolucao: so enquanto nada nasceu do convite ----
+do $$
+declare v_super uuid; v_franq uuid; v_de_volta uuid; v_consumido uuid;
+begin
+  perform pg_temp.como_sistema();
+  select id into v_super from public.usuarios where role = 'super_admin' limit 1;
+  select id into v_franq from public.franqueados limit 1;
+
+  -- Caso 1: a criacao falhou no meio. O convite precisa voltar, senao o
+  -- cliente ve "ja foi usado" na PRIMEIRA tentativa dele.
+  insert into public.convites (token_hash, criado_por, expira_em)
+  values ('hash-devolver', v_super, now() + interval '30 days');
+  perform public.reservar_convite('hash-devolver');
+  perform public.liberar_convite((select id from public.convites where token_hash = 'hash-devolver'));
+  select public.reservar_convite('hash-devolver') into v_de_volta;
+
+  -- Caso 2: a rede nasceu. Devolver aqui daria um segundo cadastro de graca.
+  insert into public.convites (token_hash, criado_por, expira_em, usado_em, franqueado_id)
+  values ('hash-consumido', v_super, now() + interval '30 days', now(), v_franq);
+  perform public.liberar_convite((select id from public.convites where token_hash = 'hash-consumido'));
+  select public.reservar_convite('hash-consumido') into v_consumido;
+
+  perform pg_temp.checar('convite devolvido volta a servir', 'reservou',
+    case when v_de_volta is null then 'nulo' else 'reservou' end);
+  perform pg_temp.checar('convite que ja gerou rede nao volta', 'nulo',
+    case when v_consumido is null then 'nulo' else 'reservou' end);
+end $$;
+
+-- ---- so o super admin enxerga convites ----
+do $$
+declare v_super int; v_dono int;
+begin
+  perform pg_temp.como_sistema();
+
+  perform pg_temp.como('convidador@rede.com.br');
+  set role authenticated;
+  select count(*) into v_super from public.convites;
+  reset role;
+
+  -- Convite e a chave de uma rede nova. Um franqueado enxergando a lista
+  -- veria por quantos clientes voce esta negociando.
+  perform pg_temp.como('dono@franqueado.com.br');
+  set role authenticated;
+  select count(*) into v_dono from public.convites;
+  reset role;
+
+  perform pg_temp.como_sistema();
+
+  perform pg_temp.checar('super admin ve os convites', 've',
+    case when v_super > 0 then 've' else 'nao ve' end);
+  perform pg_temp.checar('franqueado nao ve convite nenhum', '0', v_dono::text);
+end $$;
+
 -- Desfaz o que as asserçoes escreveram, para poderem rodar de novo.
 reset role;
 select pg_temp.como_sistema();
+delete from public.convites where token_hash like 'hash-%';
+delete from public.usuarios where email = 'convidador@rede.com.br';
+delete from auth.users where email = 'convidador@rede.com.br';
 delete from public.agendamentos where cliente_nome in
   ('Rede Suspensa', 'Loja Cancelada', 'Historico da Loja');
 delete from public.vendas where valor in (1500.50, 200, 100);
