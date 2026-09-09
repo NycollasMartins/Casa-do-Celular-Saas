@@ -27,7 +27,7 @@ const ISENTAS: Record<string, string> = {
   'app/page.tsx': 'so redireciona; nao ha espera para sinalizar',
   'app/privacidade/page.tsx': 'texto estatico, nao consulta o banco',
   'app/auth/login/page.tsx': 'ja tem Suspense proprio no bloco que espera',
-  'app/auth/register/page.tsx': 'formulario, sem consulta',
+  'app/auth/register/page.tsx': 'texto estatico explicando como conseguir acesso',
   'app/auth/forgot-password/page.tsx': 'formulario, sem consulta',
   'app/auth/nova-senha/page.tsx': 'formulario; o cliente e usado no submit, nao no render',
 };

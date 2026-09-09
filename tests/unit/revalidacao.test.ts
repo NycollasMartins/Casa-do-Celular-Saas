@@ -74,7 +74,7 @@ describe('a direcao inversa: telas que ninguem revalida', () => {
     '/': 'so redireciona',
     '/privacidade': 'texto estatico da politica',
     '/auth/login': 'formulario',
-    '/auth/register': 'formulario',
+    '/auth/register': 'texto estatico, nao consulta o banco',
     '/auth/forgot-password': 'formulario',
     '/auth/nova-senha': 'formulario',
     '/admin/franqueados': 'coberta pelo grupo franqueado',

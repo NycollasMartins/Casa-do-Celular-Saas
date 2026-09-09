@@ -39,6 +39,31 @@ test.describe('superficie publica', () => {
     await expect(page).toHaveURL(/\/privacidade$/);
   });
 
+  test('quem chega por "Nao tenho acesso" descobre os dois caminhos', async ({ page }) => {
+    // Aconteceu com o primeiro cliente de verdade: ele TINHA o convite, foi
+    // pelo endereco do site, clicou aqui e leu que devia pedir acesso ao
+    // franqueado — sendo que o franqueado era ele. Parou ali.
+    await page.goto('/auth/login');
+    await page.getByRole('link', { name: /nao tenho acesso/i }).click();
+
+    await expect(page).toHaveURL(/\/auth\/register$/);
+
+    // Quem tem convite precisa saber que o caminho e outro link.
+    await expect(page.getByText(/\/convite\//)).toBeVisible();
+    // E quem e da equipe continua sendo mandado ao franqueado.
+    await expect(page.getByText(/Equipe/)).toBeVisible();
+  });
+
+  test('a pagina de acesso nao oferece auto-cadastro', async ({ page }) => {
+    // A correcao acima nao pode virar uma porta: um botao de criar conta aqui
+    // deixaria qualquer um abrir uma rede no sistema.
+    await page.goto('/auth/register');
+
+    await expect(page.locator('form')).toHaveCount(0);
+    await expect(page.locator('input[type="password"]')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /criar|cadastrar/i })).toHaveCount(0);
+  });
+
   test('convite invalido nao abre o formulario, e nao diz por que', async ({ page }) => {
     // Um token com o formato certo mas que nao existe no banco. A resposta e
     // a mesma de expirado e de ja usado, de proposito: distinguir ajudaria
