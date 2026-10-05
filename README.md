@@ -1,36 +1,283 @@
 # Casa do Celular · Performance de agendadores
 
-SaaS multi-tenant para medir a performance dos agendadores de uma rede de
+SaaS multi-tenant que mede a performance dos agendadores de uma rede de
 franquias: quantos clientes cada um contatou, quantos agendaram visita,
-quantos compareceram na loja e qual a taxa de conversão de cada pessoa.
+quantos compareceram na loja, quanto cada visita faturou.
 
-Nasce com 9 lojas de um franqueado e já está modelado para vários
-franqueados com 10 a 80 lojas cada, sem reescrita.
+Multi-tenant de verdade: cada rede de franquias é um `franqueado`, isolado
+dos outros **pelo banco**, não pela interface. Modelado para 10 a 80 lojas
+por rede.
+
+> **Primeira vez aqui?** Leia [Comece aqui](#comece-aqui), depois
+> [Mapa: onde mudar cada coisa](#mapa-onde-mudar-cada-coisa) e
+> [Seis regras que não se quebram](#seis-regras-que-não-se-quebram). São
+> dez minutos e cobrem 90% do que você vai precisar. O resto deste arquivo é
+> referência — consulte quando bater na parte específica.
 
 ---
 
 ## Sumário
 
+**Para começar**
+- [Comece aqui](#comece-aqui)
+- [Mapa: onde mudar cada coisa](#mapa-onde-mudar-cada-coisa)
+- [Seis regras que não se quebram](#seis-regras-que-não-se-quebram)
+- [Receitas](#receitas)
+- [Armadilhas que já custaram tempo](#armadilhas-que-já-custaram-tempo)
+
+**Referência**
 - [O que o sistema faz](#o-que-o-sistema-faz)
 - [Hierarquia de acesso](#hierarquia-de-acesso)
 - [Stack](#stack)
-- [Requisitos](#requisitos)
-- [Setup local](#setup-local)
+- [Comandos](#comandos)
+- [Estrutura de pastas](#estrutura-de-pastas)
 - [Banco de dados](#banco-de-dados)
 - [Variáveis de ambiente](#variáveis-de-ambiente)
 - [Como o RLS funciona](#como-o-rls-funciona)
-- [Testando as permissões](#testando-as-permissões)
-- [Estrutura de pastas](#estrutura-de-pastas)
 - [Testes](#testes)
+
+**Operação**
+- [Deploy](#deploy)
+- [Instalação para um cliente (sem seed)](#instalação-para-um-cliente-sem-seed)
+- [Convite de rede](#convite-de-rede)
+- [Ciclo de cobrança](#ciclo-de-cobrança)
+- [Suspender assinatura](#suspender-assinatura)
+- [Rotinas agendadas](#rotinas-agendadas)
 - [LGPD](#lgpd)
+- [Cópia de segurança](#cópia-de-segurança-e-o-ensaio-de-restauração)
+
+**Funcionalidades, em detalhe**
 - [Lembrete de véspera](#lembrete-de-véspera)
 - [Registro de venda](#registro-de-venda)
 - [Metas por agendador](#metas-por-agendador)
 - [Relatório semanal](#relatório-semanal)
-- [Deploy](#deploy)
-- [Rotinas agendadas](#rotinas-agendadas)
+- [Testando as permissões](#testando-as-permissões)
+
+**Histórico**
 - [Decisões de projeto](#decisões-de-projeto)
+- [Os hooks de `hooks/` não são usados](#os-hooks-de-hooks-não-são-usados)
 - [Roadmap](#roadmap)
+
+---
+
+## Comece aqui
+
+```bash
+git clone <este-repositorio>
+cd casa-do-celular-saas
+npm install
+cp .env.example .env.local   # preencha com as chaves do seu projeto Supabase
+npm run dev
+```
+
+Abra `http://localhost:3000`. Sem sessão, o middleware manda para
+`/auth/login`.
+
+**Precisa de Node 18+** (a versão exata está no `.nvmrc`, e é a mesma que o
+CI e a Netlify usam) e de um projeto no Supabase — o plano gratuito basta.
+Para popular o banco, veja [Banco de dados](#banco-de-dados).
+
+### Os quatro comandos que você vai usar todo dia
+
+```bash
+npm test              # 602 testes unitários, ~7s, sem rede
+npm run typecheck     # tsc --noEmit
+npm run verificar:banco   # 130 asserções contra Postgres local, ~40s
+npm run build         # 28 rotas; pega o que o tsc não pega
+```
+
+`verificar:banco` é o mais importante e o menos óbvio. Ele cria um banco
+descartável, aplica **as 17 migrations na ordem**, popula o seed e roda
+asserções de permissão impersonando cada papel. É onde a segurança deste
+sistema é de fato verificada — veja [Testes](#testes). Requer apenas
+`brew install postgresql@16`.
+
+Antes de abrir PR, rode os quatro. O CI roda os mesmos.
+
+---
+
+## Mapa: onde mudar cada coisa
+
+A tabela abaixo existe para você não precisar procurar. Coluna da direita é
+o que provar que a mudança funcionou.
+
+| Quero mudar… | Mexa em | Confira com |
+|---|---|---|
+| **quem vê qual loja** | `supabase/migrations/…_rls.sql` → função `lojas_permitidas()` | `npm run verificar:banco` |
+| **o que cada papel pode fazer** | as policies da tabela, na migration; e `lib/auth/session.ts` para o lado da aplicação | `npm run verificar:banco` |
+| **campos do agendamento** | `lib/validations/agendamento.ts`, `components/forms/agendamento-form.tsx` e uma migration nova | `npm test` + `npm run verificar:banco` |
+| **as contas do dashboard** | `calcularMetricas` em `lib/supabase/queries.ts` | `tests/unit/metricas.test.ts` |
+| **rótulos de status e papel** | `STATUS_LABEL` / `ROLE_LABEL` em `lib/utils.ts` | `npm test` |
+| **itens do menu lateral** | `ITENS_NAVEGACAO` em `components/dashboard/sidebar.tsx` (tem `roles` por item) | `npm run build` |
+| **o CSV exportado** | `lib/csv.ts` | `tests/unit/csv.test.ts` |
+| **texto do lembrete de véspera** | `montarMensagem` em `lib/notificacoes.ts` **e** o espelho em `scripts/compartilhado.mjs` | `tests/unit/compartilhado.test.ts` |
+| **texto dos avisos de cobrança** | `montarAvisoDeCobranca` / `montarAvisoDeSuspensao` em `scripts/compartilhado.mjs` | `tests/unit/cobranca.test.ts` |
+| **a carência da cobrança** | `CARENCIA_DIAS` em `lib/cobranca.ts`, no espelho `scripts/compartilhado.mjs` **e** no default de `franqueados_a_suspender` na migration 017 | `tests/unit/cobranca.test.ts` (compara os três) |
+| **o prazo do convite** | `DIAS_DE_VALIDADE` em `lib/convites.ts` | `tests/unit/convites.test.ts` |
+| **variáveis de ambiente** | `.env.example` **e** `REQUISITOS` em `lib/ambiente.ts` | `tests/unit/variaveis-ambiente.test.ts` |
+| **quais telas revalidar depois de salvar** | `GRUPOS` em `lib/revalidacao.ts` | `tests/unit/revalidacao.test.ts` |
+| **limites de requisição** | `lib/rate-limit.ts`; o teto por rota fica em quem chama | `tests/unit/rate-limit.test.ts` |
+| **horário de uma rotina** | `.github/workflows/rotinas.yml` (cron **e** o `if:` do job) | `tests/unit/rotinas.test.ts` |
+| **o retorno de `/api/saude`** | `app/api/saude/route.ts` + `lib/prontidao.ts` (a sondagem) | `tests/unit/prontidao.test.ts` |
+| **a política de retenção LGPD** | `lib/lgpd.ts` e a função SQL `anonimizar_agendamentos_antigos` | `tests/unit/lgpd.test.ts` |
+
+Não achou na tabela? O atalho honesto é
+`grep -rn "<o texto que aparece na tela>" app lib components` — todo rótulo
+do sistema está em português no código, então o texto que o usuário vê é uma
+boa chave de busca.
+
+---
+
+## Seis regras que não se quebram
+
+Estas não são preferências de estilo. Cada uma existe porque **já foi
+violada neste repositório e virou falha de segurança ou número errado em
+tela**. Se você mudar uma, mude com consciência e atualize o teste que a
+guarda.
+
+### 1. A autorização mora no banco, não na página
+
+Nenhuma tela filtra por franqueado ou por loja. Elas consultam, e o Postgres
+devolve só o permitido. Um bug de front-end não vaza dado de outro tenant.
+
+A consequência prática: **para mudar permissão, você escreve SQL**, não
+TypeScript. E `lojas_permitidas()` é a fonte única de verdade de "quem vê o
+quê" — mudou a regra? Mexa só nela.
+
+### 2. `service_role` ignora RLS, e isso tem exatamente três usos
+
+A chave de serviço tem `BYPASSRLS`. Onde ela entra, **policy nenhuma
+protege** — a única barreira é o código. Os três lugares são:
+
+| Onde | Por quê |
+|---|---|
+| `scripts/seed-auth-users.mjs` | cria contas via Admin API |
+| `scripts/criar-super-admin.mjs` | a primeira conta da instalação |
+| `criarUsuario` em `app/actions/cadastros.ts` | a Admin API é necessária para criar em `auth.users` |
+
+Mais as rotinas em `scripts/` e o resgate de convite, que rodam sem sessão.
+
+Toda vez que você escrever com `createAdminClient()`, pergunte: *qual
+checagem da aplicação está no lugar do RLS aqui?* A resposta não pode ser
+"nenhuma". Foi assim que um franqueado conseguiu criar usuário no tenant de
+outro (migration 012) e se promover a super admin (013).
+
+### 3. "Hoje" é sempre `hojeNaLoja()`, de `lib/semana.ts`
+
+Nenhuma decisão de negócio sobre data usa `new Date()` direto, e nenhuma usa
+`toISOString()` para extrair data.
+
+Esse erro apareceu **cinco vezes** neste projeto. `new Date()` pega o fuso de
+quem executa — Brasília no navegador do agendador, UTC no servidor. E
+`toISOString()` devolve sempre UTC, então mente até no navegador depois das
+21h. As lojas ficam em `America/Sao_Paulo`.
+
+### 4. Dinheiro é `numeric`, nunca float
+
+`0.1 + 0.2` em ponto flutuante não dá `0.3`, e em dinheiro esse erro vira
+divergência de fechamento. Formatação em `lib/dinheiro.ts`.
+
+### 5. Leitura completa pagina até o fim
+
+O PostgREST corta toda resposta em `db-max-rows` e **não devolve erro** —
+devolve menos linhas. Use `lerPaginado` de `lib/supabase/queries.ts` (ou
+`lerTudo` em `scripts/compartilhado.mjs`) sempre que o conjunto puder passar
+de mil.
+
+Vale mais nas rotinas que nas telas: quem ficou fora do corte simplesmente
+não é avisado, de madrugada, e ninguém percebe. E o corte não é aleatório —
+as funções ordenam por nome, então seriam sempre as mesmas lojas.
+
+### 6. Toda lista de uma verdade tem um teste comparando as cópias
+
+Quando a mesma regra precisa existir em dois lugares — porque os scripts
+rodam em node puro e não importam de `lib/` —, existe um teste que executa
+as duas implementações nos mesmos casos e compara.
+
+Veja `tests/unit/compartilhado.test.ts`, `tests/unit/cobranca.test.ts`,
+`tests/unit/variaveis-ambiente.test.ts` e `tests/unit/espelho-rls.test.ts`.
+Se você criar uma segunda cópia de alguma regra, **crie o teste junto**. A
+duplicação é inevitável neste desenho; a divergência não.
+
+---
+
+## Receitas
+
+### Adicionar uma migration
+
+1. Crie `supabase/migrations/2025010100NNNN_nome.sql`. O número do **arquivo**
+   começa em `000` e o do **cabeçalho** em `001` — some 1 ao final do nome.
+   O cabeçalho precisa da linha `-- NNN - TÍTULO`, senão o gerador falha.
+2. Escreva idempotente: `create table if not exists`,
+   `create or replace function`, `drop policy if exists` antes de
+   `create policy`. O consolidado é colado mais de uma vez.
+3. Acrescente asserções em `scripts/verificacao/99-assercoes.sql` que meçam
+   o **efeito**, não a presença da regra. Policy escrita e policy aplicada já
+   divergiram aqui.
+4. `npm run verificar:banco` — tem de passar, e o número de asserções sobe.
+5. `npm run consolidado:gerar` e commite o `APLICAR-PENDENTES.sql` gerado.
+   Se a migration criar tabela, função ou trigger novos, o teste
+   `cobertura-schema` exige entrada no bloco de CONFERÊNCIA — ele falha
+   dizendo o que falta.
+6. Se criar tabela nova, adicione o tipo em `lib/types/database.ts` e a
+   sondagem em `lib/prontidao.ts`.
+7. Atualize a contagem de asserções no README. `verificar:banco` falha se o
+   número divergir.
+
+### Adicionar uma variável de ambiente
+
+1. Documente em `.env.example`, com um comentário dizendo **o que deixa de
+   funcionar sem ela**.
+2. Se a aplicação precisa dela para rodar, acrescente em `REQUISITOS` de
+   `lib/ambiente.ts` com a gravidade (`impede` ou `degrada`) — é isso que
+   `/api/saude` reporta.
+3. `npm test` — a guarda compara três listas: o que o código lê, o que o
+   `.env.example` documenta e o que `lib/ambiente.ts` confere. Variável lida
+   em script `.sh` também é detectada.
+4. Acrescente na Netlify e, se alguma rotina usar, nos *Secrets* do GitHub.
+
+### Adicionar uma tela
+
+1. `app/dashboard/<nome>/page.tsx` como Server Component.
+2. `exigirRole([...])` na primeira linha — é o que barra papel errado.
+3. Registre em `ITENS_NAVEGACAO` (`components/dashboard/sidebar.tsx`) com os
+   `roles` que a enxergam.
+4. Se ela consulta o banco, precisa de `loading.tsx` que a cubra — um no
+   segmento pai serve. O teste `loading-rotas` exige isso ou uma isenção
+   **com motivo escrito**.
+5. Se o dado dela muda por alguma action, registre a rota em `GRUPOS`
+   (`lib/revalidacao.ts`), senão a tela mostra dado velho.
+
+### Adicionar uma rotina agendada
+
+1. Script em `scripts/<nome>.mjs`, com `--seco` que lista sem executar.
+2. Lógica pura compartilhada vai em `scripts/compartilhado.mjs` (os scripts
+   rodam em node puro e não importam de `lib/`).
+3. Entrada em `package.json`.
+4. Em `.github/workflows/rotinas.yml`: um cron novo, o nome em
+   `workflow_dispatch.inputs.rotina.options`, e um job com
+   `if: github.event.schedule == '<o seu cron>'`. **Amarrar ao cron
+   específico, não a `event_name == 'schedule'`** — esse último casa com
+   todos e a rotina roda fora de hora.
+5. `npm test` — `tests/unit/rotinas.test.ts` confere que cada job tem
+   exatamente um cron e vice-versa.
+
+### Mudar quem vê o quê
+
+Mexa em `lojas_permitidas()`, na migration de RLS. Depois rode
+`npm run verificar:banco` e **leia as asserções de visibilidade**: elas dizem
+quantas lojas cada papel enxerga. Se o número de alguém mudou sem você
+querer, você acabou de encontrar o bug antes de ele ir para produção.
+
+### Criar a primeira conta de uma instalação nova
+
+```bash
+npm run admin:criar -- --nome "Seu Nome" --email voce@dominio.com
+```
+
+Cria **um** super admin com senha provisória e nenhum dado de negócio.
+Recusa rodar se já existir um. Veja
+[Instalação para um cliente](#instalação-para-um-cliente-sem-seed).
 
 ---
 
@@ -91,33 +338,156 @@ poder apagar a própria medição. A regra está no banco (policy
 | Datas | date-fns |
 | Toasts | sonner |
 
-Validado neste repositório: `tsc --noEmit` limpo, `next build` com 21 rotas,
-e as três migrations executadas em PostgreSQL 16 real (9 lojas, 21 usuários,
-18 participações, 18 vínculos, 50 agendamentos).
+Verificado neste repositório: `tsc --noEmit` limpo, `next build` com 28
+rotas, 602 testes unitários, e as 17 migrations aplicadas na ordem em
+PostgreSQL 16 real, com asserções de permissão impersonando cada papel.
 
 ---
 
-## Requisitos
+## Armadilhas que já custaram tempo
 
-- Node.js 18 ou superior
-- npm (ou pnpm)
-- Conta no Supabase (free tier basta para o MVP)
-- Conta na Vercel (opcional, para publicar)
+Cada item aqui é um erro que **foi cometido neste repositório**, custou
+depuração e tem hoje um teste guardando. Ler esta lista é mais barato que
+redescobri-la.
+
+**Policy `for all` atropela a de SELECT.** Policies permissivas se somam por
+OU, e `for all` cobre SELECT também. Uma `metas_write` com `using` largo
+venceu a `metas_select` escopada, e um franqueado passou a ver as metas de
+outro tenant. `using` decide **quais linhas você alcança**; `with check`,
+**como a linha pode ficar**. DELETE não tem `with check` — só `using`.
+
+**Trigger vê OLD, policy não.** Para exigir "esse campo não mudou" você
+precisa de trigger `BEFORE UPDATE`. Uma policy só enxerga a linha nova, e
+recusar toda linha com `role = 'super_admin'` impediria até um super admin
+de editar o próprio nome.
+
+**`notify pgrst, 'reload schema'` depois de criar função.** O PostgREST
+guarda a lista de funções em memória. Função recém-criada existe no banco e
+responde *"Could not find the function … in the schema cache"* pela API — o
+que faz parecer que a migration não rodou. O consolidado já faz isso no fim.
+
+**Guarda por arquivo é guarda vacilante.** Um teste que perguntava se
+`usuarioComAcesso` *aparecia no arquivo* deixava nove das dez actions de
+`cadastros.ts` passarem sem autenticação nenhuma. Confira **cada símbolo
+exportado**, não o arquivo. Vale para qualquer guarda de cobertura.
+
+**`deleteUser` lança, não devolve erro.** O `admin.auth.admin.deleteUser` do
+supabase-js levanta exceção. Sem `try`, uma falha de rede no desfazimento
+troca a sua mensagem cuidadosa por um stack trace do Node — e quem rodou o
+comando não fica sabendo nem do erro original nem do que sobrou pela metade.
+
+**`String(formData.get(x) ?? y)` com os dois nulos vira a string `"null"`.**
+O banco recusa por UUID inválido, com uma mensagem que não ajuda ninguém.
+Resolva o valor explicitamente antes de passar adiante.
+
+**`setMonth` transborda.** `2026-03-31` menos um mês devolve `2026-03-03` em
+JavaScript, ainda em março. O Postgres gruda no último dia e devolve
+`2026-02-28`. Com as duas versões diferentes, a tela de Privacidade contava
+vencidos por uma data quase um mês distante da que o script usa para
+anonimizar. Use `subtrairMeses` de `lib/lgpd.ts`.
+
+**Impersonação vaza entre blocos nas asserções SQL.** `pg_temp.como(...)`
+deixa a claim do JWT setada, e o bloco seguinte roda **como a última pessoa
+impersonada** — então as travas que olham `auth.uid()` disparam contra o seu
+próprio código de preparo. Chame `pg_temp.como_sistema()` antes de cada
+setup.
+
+**Cron de workflow dispara o arquivo inteiro.** Cada job precisa se amarrar
+ao **seu** cron (`github.event.schedule == '0 21 * * *'`), não a
+`event_name == 'schedule'`, que casa com todos.
+
+**O `next/dynamic` pode piorar o pacote.** Dividir `charts-lazy` não reduziu
+nada enquanto ele importava o esqueleto do próprio módulo que tentava
+adiar — o esqueleto precisa morar em arquivo separado. Meça o build antes e
+depois; a intenção não conta.
+
+**Commit não é deploy.** A Netlify publica a partir da `main` **no GitHub**.
+Commit local não muda o que está no ar — e é fácil afirmar "está pronto"
+olhando o repositório local enquanto o cliente vê a versão antiga. Depois de
+`git push`, confira no domínio de produção, não no `git log`.
 
 ---
 
-## Setup local
+## Comandos
 
 ```bash
-git clone <seu-repositorio>
-cd casa-do-celular-saas
-npm install
-cp .env.example .env.local     # preencha com as chaves do seu projeto Supabase
-npm run dev
+# desenvolvimento
+npm run dev                  # servidor local em :3000
+npm run build                # build de produção (28 rotas)
+npm run typecheck            # tsc --noEmit
+npm run lint
+
+# testes
+npm test                     # unitários (sem rede, ~7s)
+npm run test:unit            # idem, explícito
+npm run test:rls             # permissões contra Supabase real — precisa do seed
+npm run test:e2e             # navegador (Playwright)
+npm run test:e2e:publico     # só a superfície pública: roda sem seed
+npm run verificar:banco      # 130 asserções em Postgres local — a mais importante
+npm run verificar:consolidado # ensaia o APLICAR-PENDENTES em três cenários
+npm run medir:consultas      # tempo das consultas com volume sintético
+
+# banco
+npm run consolidado:gerar    # regera supabase/APLICAR-PENDENTES.sql
+npm run consolidado:conferir # falha se o arquivo estiver desatualizado (CI roda)
+npm run admin:criar -- --nome "X" --email x@y.com   # primeira conta da instalação
+npm run seed:auth            # 21 contas de exemplo — DESENVOLVIMENTO apenas
+npm run backup -- --ensaio   # cópia + restauração de teste + asserções
+
+# rotinas (todas aceitam --seco)
+npm run lembrete:vespera
+npm run relatorio:semanal
+npm run cobranca
+npm run lgpd:reter
 ```
 
-Abra `http://localhost:3000`. Sem sessão, o middleware manda para
-`/auth/login`.
+---
+
+## Estrutura de pastas
+
+```
+app/
+  actions/              server actions: agendamentos, auth, cadastros, convites
+  api/                  rotas REST + /api/saude (aberta, diz se o deploy está pronto)
+  auth/                 login, nova-senha, forgot-password, callback, register
+  convite/[token]/      resgate público de convite — sem sessão
+  dashboard/            visão geral, agendamentos, relatórios, lojas, equipe,
+                        metas, societário, privacidade
+  admin/franqueados/    área do super admin: redes, convites, assinaturas
+components/
+  ui/                   primitivas (shadcn/ui + Radix) e campo.tsx (acessibilidade)
+  dashboard/            sidebar, seletor de loja, cards, gráficos, tabela
+  forms/                agendamento, loja, usuário, franqueado, venda, convite
+  layout/               header, user-menu, mobile-nav
+lib/
+  supabase/             client, server, admin, middleware, queries
+  auth/session.ts       usuário logado + guards de papel
+  validations/          schemas Zod (auth, agendamento, cadastros)
+  types/                tipos do banco e das métricas
+  semana.ts             FONTE ÚNICA de "hoje" e de janelas de data
+  tenant.ts             de quem é o registro que está sendo criado
+  cobranca.ts           carência da assinatura (espelhada nos scripts)
+  convites.ts           token de convite: gerar, hash, validar formato
+  lgpd.ts               retenção e anonimização
+  revalidacao.ts        quais telas revalidar por grupo de mudança
+  ambiente.ts           o que /api/saude confere
+  prontidao.ts          sondagem do schema aplicado
+  rate-limit.ts         Upstash com fallback em memória
+  dinheiro.ts, csv.ts, filtros.ts, busca.ts, metas.ts, vinculos.ts,
+  notificacoes.ts, whatsapp.ts, rede.ts, utils.ts
+supabase/
+  migrations/           17 migrations, numeradas e dependentes entre si
+  APLICAR-PENDENTES.sql GERADO — não edite à mão
+scripts/
+  compartilhado.mjs     lógica espelhada de lib/, para os scripts em node puro
+  verificacao/          stubs do Supabase + as asserções de RLS e de funções
+  *.mjs, *.sh           rotinas, seed, bootstrap, backup, verificações
+tests/
+  unit/                 602 testes, sem rede
+  rls/                  permissões contra Supabase real (precisa de seed)
+  e2e/                  navegador; publico.spec.ts roda sem seed
+hooks/                  NÃO USADOS — ver seção própria
+```
 
 ---
 
@@ -223,141 +593,6 @@ sem ele, um vínculo cruzado dá acesso aos dados do outro tenant.
 > Rode `notify pgrst, 'reload schema';` no SQL Editor — o
 > `APLICAR-PENDENTES.sql` já faz isso ao final.
 
-## Instalação para um cliente (sem seed)
-
-Os quinze passos acima montam um ambiente de **desenvolvimento**: incluem o
-seed, que cria um franqueado fictício, 9 lojas, 50 agendamentos e 21 contas
-com a mesma senha, escrita neste repositório e que o middleware nunca obriga
-a trocar.
-
-Nada disso pode existir no banco de um cliente. A instalação limpa tem quatro
-passos:
-
-**1. Schema e RLS** — `20250101000000_schema.sql` e depois
-`20250101000001_rls.sql`, no SQL Editor.
-
-**2. Tudo que vem depois** — cole `supabase/APLICAR-PENDENTES.sql`, que reúne
-as migrations posteriores ao seed na ordem certa e termina listando o que
-ficou faltando. **Pule o seed** (`npm run seed:auth` e
-`20250101000002_seed.sql`): eles são os dois passos que injetam dado fictício.
-
-**3. A primeira conta** — de volta ao terminal:
-
-```bash
-npm run admin:criar -- --nome "Nome do Dono" --email dono@empresa.com.br
-```
-
-Cria **uma** conta de super admin, com senha aleatória mostrada uma única vez
-e marcada como provisória — o middleware exige a troca antes de liberar
-qualquer tela. Não insere nenhum dado de negócio.
-
-O comando **se recusa a rodar** se o banco já tiver um super admin, inclusive
-desligado: ele é o bootstrap, não a porta de entrada permanente. A partir daí
-tudo é pela tela, que é onde as regras de tenant valem. Perdeu a senha antes
-da troca? Apague a conta em *Authentication → Users* e rode de novo.
-
-**4. O resto é do cliente** — logado como super admin, ele cadastra o
-franqueado, as lojas e a equipe. Cada conta criada por ali nasce com senha
-provisória própria, e o papel define o que a pessoa enxerga.
-
-Por que existe um script para isto: não há auto-cadastro nesta aplicação — de
-propósito, porque toda conta pertence a um franqueado e precisa de loja e
-papel definidos. O efeito colateral é um ovo-e-galinha na instalação, e até
-aqui o único jeito de sair dele era rodar o seed.
-
----
-
-## Convite de rede
-
-Cadastrar cada cliente à mão coloca você no caminho crítico da venda. O
-convite tira: gere o link quando quiser — dez de uma vez, antes de existir
-cliente — e quem o recebe cria a própria rede e entra sozinho.
-
-Em **Franqueados → Convites**, *Gerar convite*. O link aparece **uma vez** e
-não volta: o banco guarda só o SHA-256 dele. Isso é deliberado — o token é
-uma credencial, e um dump da tabela não pode devolver convites utilizáveis.
-
-Vale 30 dias e serve para **um** cadastro. Quem abre preenche razão social,
-CNPJ (opcional), nome, e-mail e a própria senha; nasce a rede e a conta de
-`franqueado` dela. Sem link, ninguém se cadastra — não há auto-cadastro.
-
-O uso único não é conferido em duas etapas. `reservar_convite` confere e
-marca no **mesmo** `update`, então dois cliques no mesmo link — ou o link
-aberto em duas abas — não criam duas redes. Se a criação falhar no meio, o
-convite é devolvido: queimar o convite de um cliente que nem chegou a entrar
-seria o pior desfecho.
-
-Abrir a página **não** consome o convite. Se consumisse, o preview de um
-aplicativo de mensagem — que busca a URL para montar o cartão — queimaria o
-link antes de o cliente digitar o primeiro campo.
-
----
-
-## Ciclo de cobrança
-
-Cada rede tem um vencimento. Redes criadas por convite nascem com **30 dias**;
-cada pagamento registrado empurra mais 30, **mantendo o dia do mês** — quem
-vence dia 10 e paga dia 12 continua vencendo dia 10.
-
-```
-vencimento ──► aviso por e-mail ──► 3 dias ──► suspensão automática
-                     │                              │
-                     └── pagamento registrado ──────┴──► volta ao normal
-```
-
-A rotina `npm run cobranca` roda todo dia às 9h (`.github/workflows/rotinas.yml`).
-No dia do vencimento ela envia o aviso; três dias depois, se nada foi pago,
-suspende a rede — o mesmo efeito da suspensão manual, sem ninguém lembrar.
-
-**A carência começa quando a mensagem sai, não no vencimento.** Se o provedor
-de e-mail estiver fora do ar por dois dias, o cliente perderia dois terços do
-prazo sem nunca ter sido avisado. Por isso `assinatura_avisado_em` é gravado
-**depois** do envio bem-sucedido — e falha de envio faz a rotina tentar de
-novo no dia seguinte, sem consumir prazo.
-
-**Sem `RESEND_API_KEY`, ninguém é suspenso.** Não é efeito colateral: sem
-canal não há aviso, e cortar a operação de um cliente que nunca soube que
-devia, por uma configuração que ele não controla, seria o pior erro que este
-sistema poderia cometer. A rotina lista o que faria e para. O mesmo vale para
-rede sem `email_contato` preenchido.
-
-**Vencimento nulo = rede não cobrada.** É o caso da sua própria rede e de
-cortesias. Sem isso, a primeira coisa que a rotina faria seria avisar você e
-depois se cortar.
-
-O pagamento é registrado **à mão**, em *Franqueados → Registrar pagamento*.
-Não há gateway integrado: quem confirma que o dinheiro entrou é você, olhando
-o extrato.
-
-Nada é apagado na suspensão. O histórico, as lojas e a equipe voltam como
-estavam assim que o pagamento for registrado — e as duas mensagens que o
-cliente recebe dizem isso, porque é a dúvida que gera o telefonema.
-
----
-
-## Suspender assinatura
-
-Duas colunas de status existiam desde o começo e não eram conferidas em lugar
-nenhum. Desde a migration 015, valem:
-
-| Onde | O que acontece |
-|---|---|
-| *Franqueados* → Status **Inativo** | a rede inteira perde leitura e escrita |
-| *Lojas* → Status **Inativa** | a loja não recebe mais registro, e o histórico continua visível |
-
-A diferença é proposital. Rede suspensa é o cliente que parou de pagar —
-manter os relatórios de pé seria entregar o produto de graça. Loja suspensa é
-o franqueado que cancelou **uma** unidade e segue cliente nas outras;
-esconder o histórico dela apagaria meses de medição de quem continua pagando.
-
-A checagem da rede mora em `usuario_role()`, não em cada policy: tudo deriva
-dela, então uma linha vale por trinta. Quem é suspenso é deslogado com uma
-mensagem — sem isso veria telas vazias e concluiria que o sistema quebrou.
-
-Super admin fica de fora das duas: é ele quem reativa.
-
----
-
 ### Tabelas
 
 | Tabela | Papel |
@@ -420,59 +655,6 @@ using (loja_id in (select public.lojas_permitidas()));
 
 `lojas_permitidas()` é a única fonte de verdade de permissão do sistema.
 Mudou a regra de quem vê o quê? Mexe só nela.
-
----
-
-## Testando as permissões
-
-Depois do seed, entre com cada perfil (senha `CasaCelular@2025`) e confirme:
-
-| Login | Deve ver |
-|---|---|
-| `dono@franqueado.com.br` | as 9 lojas no dropdown |
-| `diretor1@franqueado.com.br` | apenas lojas 1 a 5 |
-| `diretor2@franqueado.com.br` | apenas lojas 6 a 9 |
-| `agendador1.loja3@franqueado.com.br` | sem dropdown, só "Casa do Celular Loja 3" |
-
-O teste que importa: logado como `diretor2`, tente abrir
-`/dashboard/<id-da-loja-1>`. Deve dar 404 — e não uma tela vazia, que
-confirmaria a existência da loja.
-
-Para checar direto no SQL Editor, simulando um usuário:
-
-```sql
-set local role authenticated;
-set local request.jwt.claims = '{"sub":"<uuid-do-diretor1>"}';
-select count(*) from lojas;   -- deve retornar 5
-```
-
----
-
-## Estrutura de pastas
-
-```
-app/
-  actions/            server actions (agendamentos, auth, cadastros)
-  auth/               login, register, forgot-password, callback
-  dashboard/          visão geral, agendamentos, relatórios, lojas, equipe
-  admin/              área exclusiva do super admin
-  api/                rotas REST (métricas, agendamentos) com rate limit
-components/
-  ui/                 botão, input, select, card, tabela, dialog, tabs, badge
-  dashboard/          loja-selector, metrics-cards, charts-container,
-                      agendamentos-table, periodo-selector, status-filter, sidebar
-  forms/              agendamento, loja, usuário, franqueado
-  layout/             header, user-menu, mobile-nav
-lib/
-  supabase/           client, server, admin, middleware, queries
-  auth/session.ts     usuário logado + guards de papel
-  validations/        schemas Zod
-  types/              tipos do banco e das métricas
-  utils.ts            máscaras, validação de CPF, formatação
-hooks/                use-lojas, use-agendamentos, use-metricas, use-usuarios
-supabase/migrations/  schema, RLS, seed
-scripts/              seed-auth-users.mjs
-```
 
 ---
 
@@ -663,6 +845,314 @@ Os testes de **RLS não rodam no CI de propósito**: eles escrevem no banco
 para provar que as policies barram o que devem barrar, e fazer isso a cada
 push mexeria em dados reais. Rode `npm run test:rls` num ambiente de
 desenvolvimento com o seed aplicado.
+
+---
+
+## Deploy
+
+### O que o `git push` faz, e o que ele não faz
+
+A Netlify publica a partir da `main` **no GitHub**: todo push reconstrói e
+republica, sem mais nenhum passo. É o único caminho de deploy, e commit
+local não muda nada do que está no ar.
+
+O que o push **não** faz, e precisa existir uma vez por ambiente:
+
+| Fora do repositório | Onde | Quando refazer |
+|---|---|---|
+| Schema do banco | `supabase/APLICAR-PENDENTES.sql` colado no SQL Editor | a cada migration nova |
+| Variáveis de ambiente | painel da Netlify | ao acrescentar variável |
+| Segredos das rotinas | *Settings → Secrets* no GitHub | ao acrescentar rotina |
+| Redirect URL de produção | Supabase → *Authentication → URL Configuration* | uma vez |
+
+Depois de publicar, `/api/saude` responde se as quatro estão no lugar —
+`200` quando sim, `503` listando o que falta. Confira lá, não no `git log`.
+
+### Configuração inicial
+
+**Supabase:** crie o projeto, rode as migrations na ordem acima e ative
+autenticação por e-mail e senha em *Authentication → Providers*.
+
+**Netlify:** conecte o repositório do GitHub, adicione as quatro variáveis
+de ambiente (com `NEXT_PUBLIC_SITE_URL` apontando para o domínio de
+produção) e faça o deploy. Cada push na `main` publica automaticamente. A
+versão do Node vem do `.nvmrc` — a Netlify lê esse arquivo sozinha, e é o
+mesmo que o CI usa, para o build não depender de qual versão cada ambiente
+escolheu. A Vercel funciona igual; nada aqui é específico de uma delas.
+
+**As rotinas não rodam sozinhas por conta do deploy.** O lembrete da véspera
+e o resumo semanal são scripts, e um deploy não agenda script nenhum — veja
+[Rotinas agendadas](#rotinas-agendadas) abaixo.
+
+**Confira o deploy em `/api/saude`.** Logo depois de publicar, abra essa
+rota no domínio novo. Ela responde `200` quando está tudo pronto e `503`
+listando o que falta — em duas frentes:
+
+- **Ambiente:** quais variáveis estão ausentes e o que deixa de funcionar
+  sem cada uma.
+- **Banco:** quais migrations ainda não foram aplicadas, pelo número — e
+  quais foram aplicadas **pela metade**.
+
+A segunda distinção existe porque meia migration engana. Migration inteira
+faltando é fácil de entender: não rodou. Mas com a tabela presente e a função
+ausente, quem olha conclui que ela rodou e vai procurar o problema em outro
+lugar. Costuma ser dependência — uma função referencia coluna de uma
+migration anterior que ainda não rodou, o arquivo foi colado, criou a tabela
+e parou no erro.
+
+A segunda existe porque nada liga o código publicado ao schema aplicado: dá
+para subir uma versão que usa `vendas` num banco que não tem `vendas`, e o
+erro só aparece quando alguém abre a tela. Este projeto já viveu isso, com
+parte das migrations aplicada e parte não, sem ninguém saber quais.
+
+A sondagem é indireta — o PostgREST não expõe `information_schema` —, então
+uma função recém-criada pode aparecer como ausente por causa do cache. A
+resposta diz isso e sugere o `notify pgrst` antes de concluir que a
+migration não rodou.
+
+Sendo aberta e consultando o banco, a rota tem dois freios: o resultado da
+sondagem fica em cache por 30 segundos, e há teto de 12 conferências por
+minuto por IP.
+
+O IP vem de `x-nf-client-connection-ip` (ou do equivalente da borda), **não**
+do `x-forwarded-for` cru — esse último é escrito pelo cliente, e trocar o
+valor a cada chamada anularia o teto e ainda criaria uma chave nova no
+contador em memória a cada requisição. Sem eles, uma requisição barata para quem chama viraria dez
+consultas ao Supabase — amplificação clássica.
+
+A rota é aberta e não passa pelo Supabase de propósito — o momento em que
+ela é mais necessária é justamente quando ninguém consegue entrar. Nunca
+devolve o valor de variável nenhuma, só o nome da que falta.
+
+Ela acusa também o erro mais comum do primeiro deploy: `NEXT_PUBLIC_SITE_URL`
+publicada com o valor de desenvolvimento. O e-mail de recuperação chega
+normalmente e o link manda o usuário para a máquina dele — nada falha de
+forma visível.
+
+Depois de publicar, volte ao Supabase e adicione a URL de produção em
+*Authentication → URL Configuration → Redirect URLs*, senão o link de
+recuperação de senha volta para `localhost`.
+
+**Monitoramento:** Sentry já está integrado e fica **inerte sem DSN** — sem
+`NEXT_PUBLIC_SENTRY_DSN` nada é inicializado e nenhuma requisição sai da
+aplicação. Para ligar, preencha as variáveis do `.env.example`.
+
+Inerte, porém, não quer dizer sem custo. O middleware roda em **toda**
+requisição, e o Sentry entra no pacote dele pela instrumentação de borda.
+Medido no build:
+
+```
+com Sentry na borda   133 kB
+sem Sentry na borda    84 kB
+```
+
+São 49 kB — 37% do middleware — carregados a cada requisição por um serviço
+que, sem DSN, não envia nada. Tentei condicionar o carregamento à presença da
+variável e **não funciona**: o import é dinâmico, mas para a borda o Next
+junta tudo num arquivo só, então a condição em tempo de execução não tira
+nada do pacote.
+
+O único jeito de recuperar os 49 kB é remover a linha
+`await import('./sentry.edge.config')` de `instrumentation.ts` — e o preço é
+perder a captura de erro do middleware, que é justamente a que não dá para
+depurar de outro jeito. A escolha depende de quanto o primeiro carregamento
+importa para você; o número está aqui para ela ser informada.
+
+Dois cuidados na configuração, ambos por causa do CPF de cliente final:
+`sendDefaultPii` está desligado, e um `beforeSend` remove CPF e telefone de
+qualquer texto do evento antes do envio — inclusive de URL em breadcrumb e
+de corpo de server action. Replay só é gravado depois de um erro, nunca a
+sessão inteira, que capturaria dados digitados em tela.
+
+A rota `/monitoring` é o túnel do Sentry e está liberada no middleware. Sem
+isso, o relatório de erro seria redirecionado para o login e nunca chegaria
+— e o erro mais importante de capturar é justamente o de quem não conseguiu
+autenticar.
+
+O middleware cresce de ~86 kB para ~133 kB com o SDK de borda incluído. Está
+bem abaixo do limite da Vercel e da Netlify, mas é custo real em cold start.
+
+Supabase Logs continua sendo o lugar das queries.
+
+---
+
+## Instalação para um cliente (sem seed)
+
+Os quinze passos acima montam um ambiente de **desenvolvimento**: incluem o
+seed, que cria um franqueado fictício, 9 lojas, 50 agendamentos e 21 contas
+com a mesma senha, escrita neste repositório e que o middleware nunca obriga
+a trocar.
+
+Nada disso pode existir no banco de um cliente. A instalação limpa tem quatro
+passos:
+
+**1. Schema e RLS** — `20250101000000_schema.sql` e depois
+`20250101000001_rls.sql`, no SQL Editor.
+
+**2. Tudo que vem depois** — cole `supabase/APLICAR-PENDENTES.sql`, que reúne
+as migrations posteriores ao seed na ordem certa e termina listando o que
+ficou faltando. **Pule o seed** (`npm run seed:auth` e
+`20250101000002_seed.sql`): eles são os dois passos que injetam dado fictício.
+
+**3. A primeira conta** — de volta ao terminal:
+
+```bash
+npm run admin:criar -- --nome "Nome do Dono" --email dono@empresa.com.br
+```
+
+Cria **uma** conta de super admin, com senha aleatória mostrada uma única vez
+e marcada como provisória — o middleware exige a troca antes de liberar
+qualquer tela. Não insere nenhum dado de negócio.
+
+O comando **se recusa a rodar** se o banco já tiver um super admin, inclusive
+desligado: ele é o bootstrap, não a porta de entrada permanente. A partir daí
+tudo é pela tela, que é onde as regras de tenant valem. Perdeu a senha antes
+da troca? Apague a conta em *Authentication → Users* e rode de novo.
+
+**4. O resto é do cliente** — logado como super admin, ele cadastra o
+franqueado, as lojas e a equipe. Cada conta criada por ali nasce com senha
+provisória própria, e o papel define o que a pessoa enxerga.
+
+Por que existe um script para isto: não há auto-cadastro nesta aplicação — de
+propósito, porque toda conta pertence a um franqueado e precisa de loja e
+papel definidos. O efeito colateral é um ovo-e-galinha na instalação, e até
+aqui o único jeito de sair dele era rodar o seed.
+
+---
+
+## Convite de rede
+
+Cadastrar cada cliente à mão coloca você no caminho crítico da venda. O
+convite tira: gere o link quando quiser — dez de uma vez, antes de existir
+cliente — e quem o recebe cria a própria rede e entra sozinho.
+
+Em **Franqueados → Convites**, *Gerar convite*. O link aparece **uma vez** e
+não volta: o banco guarda só o SHA-256 dele. Isso é deliberado — o token é
+uma credencial, e um dump da tabela não pode devolver convites utilizáveis.
+
+Vale 30 dias e serve para **um** cadastro. Quem abre preenche razão social,
+CNPJ (opcional), nome, e-mail e a própria senha; nasce a rede e a conta de
+`franqueado` dela. Sem link, ninguém se cadastra — não há auto-cadastro.
+
+O uso único não é conferido em duas etapas. `reservar_convite` confere e
+marca no **mesmo** `update`, então dois cliques no mesmo link — ou o link
+aberto em duas abas — não criam duas redes. Se a criação falhar no meio, o
+convite é devolvido: queimar o convite de um cliente que nem chegou a entrar
+seria o pior desfecho.
+
+Abrir a página **não** consome o convite. Se consumisse, o preview de um
+aplicativo de mensagem — que busca a URL para montar o cartão — queimaria o
+link antes de o cliente digitar o primeiro campo.
+
+---
+
+## Ciclo de cobrança
+
+Cada rede tem um vencimento. Redes criadas por convite nascem com **30 dias**;
+cada pagamento registrado empurra mais 30, **mantendo o dia do mês** — quem
+vence dia 10 e paga dia 12 continua vencendo dia 10.
+
+```
+vencimento ──► aviso por e-mail ──► 3 dias ──► suspensão automática
+                     │                              │
+                     └── pagamento registrado ──────┴──► volta ao normal
+```
+
+A rotina `npm run cobranca` roda todo dia às 9h (`.github/workflows/rotinas.yml`).
+No dia do vencimento ela envia o aviso; três dias depois, se nada foi pago,
+suspende a rede — o mesmo efeito da suspensão manual, sem ninguém lembrar.
+
+**A carência começa quando a mensagem sai, não no vencimento.** Se o provedor
+de e-mail estiver fora do ar por dois dias, o cliente perderia dois terços do
+prazo sem nunca ter sido avisado. Por isso `assinatura_avisado_em` é gravado
+**depois** do envio bem-sucedido — e falha de envio faz a rotina tentar de
+novo no dia seguinte, sem consumir prazo.
+
+**Sem `RESEND_API_KEY`, ninguém é suspenso.** Não é efeito colateral: sem
+canal não há aviso, e cortar a operação de um cliente que nunca soube que
+devia, por uma configuração que ele não controla, seria o pior erro que este
+sistema poderia cometer. A rotina lista o que faria e para. O mesmo vale para
+rede sem `email_contato` preenchido.
+
+**Vencimento nulo = rede não cobrada.** É o caso da sua própria rede e de
+cortesias. Sem isso, a primeira coisa que a rotina faria seria avisar você e
+depois se cortar.
+
+O pagamento é registrado **à mão**, em *Franqueados → Registrar pagamento*.
+Não há gateway integrado: quem confirma que o dinheiro entrou é você, olhando
+o extrato.
+
+Nada é apagado na suspensão. O histórico, as lojas e a equipe voltam como
+estavam assim que o pagamento for registrado — e as duas mensagens que o
+cliente recebe dizem isso, porque é a dúvida que gera o telefonema.
+
+---
+
+## Suspender assinatura
+
+Duas colunas de status existiam desde o começo e não eram conferidas em lugar
+nenhum. Desde a migration 015, valem:
+
+| Onde | O que acontece |
+|---|---|
+| *Franqueados* → Status **Inativo** | a rede inteira perde leitura e escrita |
+| *Lojas* → Status **Inativa** | a loja não recebe mais registro, e o histórico continua visível |
+
+A diferença é proposital. Rede suspensa é o cliente que parou de pagar —
+manter os relatórios de pé seria entregar o produto de graça. Loja suspensa é
+o franqueado que cancelou **uma** unidade e segue cliente nas outras;
+esconder o histórico dela apagaria meses de medição de quem continua pagando.
+
+A checagem da rede mora em `usuario_role()`, não em cada policy: tudo deriva
+dela, então uma linha vale por trinta. Quem é suspenso é deslogado com uma
+mensagem — sem isso veria telas vazias e concluiria que o sistema quebrou.
+
+Super admin fica de fora das duas: é ele quem reativa.
+
+---
+
+## Rotinas agendadas
+
+O sistema tem três rotinas: o **lembrete da véspera** (uma vez por dia, fim
+da tarde), o **resumo semanal** (segunda de manhã) e a **varredura de
+retenção da LGPD** (dia 1º de cada mês). Elas são scripts Node — e por um bom
+tempo foram *só* scripts: nada as executava, então em produção nunca rodaram.
+Publicar a aplicação não agenda nada.
+
+`.github/workflows/rotinas.yml` agenda as duas.
+
+```
+0 21 * * *   →  18:00 em São Paulo, todo dia      →  lembrete da véspera
+0 11 * * 1   →  08:00 em São Paulo, segunda-feira →  resumo semanal
+0 9 1 * *    →  06:00 em São Paulo, dia 1º        →  retenção (LGPD)
+```
+
+Um cron dispara o workflow **inteiro**, e cada job decide se é com ele. Por
+isso a condição de cada um cita o seu horário: perguntar apenas se veio de um
+agendamento faria o lembrete rodar também na segunda de manhã e no dia 1º.
+
+O cron do GitHub é UTC. O Brasil não tem mais horário de verão desde 2019,
+então São Paulo é UTC−3 o ano inteiro e essas contas não escorregam em março
+ou outubro.
+
+**Ficam desligadas até você ligar.** Sem `NEXT_PUBLIC_SUPABASE_URL` e
+`SUPABASE_SERVICE_ROLE_KEY` em *Settings → Secrets*, os jobs pulam com um
+aviso e nada é enviado. E mesmo com eles, os scripts só enviam de verdade
+quando as credenciais do canal existem (`WHATSAPP_ACCESS_TOKEN` ou
+`RESEND_API_KEY`); sem elas, apenas registram o que fariam.
+
+**Para testar antes**, use *Run workflow* na aba Actions: ele pergunta qual
+rotina e oferece **modo seco**, que lista sem enviar.
+
+**Um cuidado com o segredo.** `SUPABASE_SERVICE_ROLE_KEY` ignora o RLS.
+Guardá-la nos segredos do GitHub significa confiar neles tanto quanto nos da
+Netlify. Quem preferir não duplicar a chave deve disparar as rotinas por
+outro gatilho e deixar este workflow sem segredos — ele pula sozinho, sem
+erro.
+
+**Por que aqui e não numa função da Netlify:** os dois scripts executam ao
+carregar e terminam com `process.exit`. Uma função serverless exigiria
+refatorar código que funciona só para trocar o gatilho.
 
 ---
 
@@ -890,173 +1380,28 @@ aconteceu.
 
 ---
 
-## Deploy
+## Testando as permissões
 
-**Supabase:** crie o projeto, rode as migrations na ordem acima e ative
-autenticação por e-mail e senha em *Authentication → Providers*.
+Depois do seed, entre com cada perfil (senha `CasaCelular@2025`) e confirme:
 
-**Netlify:** conecte o repositório do GitHub, adicione as quatro variáveis
-de ambiente (com `NEXT_PUBLIC_SITE_URL` apontando para o domínio de
-produção) e faça o deploy. Cada push na `main` publica automaticamente. A
-versão do Node vem do `.nvmrc` — a Netlify lê esse arquivo sozinha, e é o
-mesmo que o CI usa, para o build não depender de qual versão cada ambiente
-escolheu. A Vercel funciona igual; nada aqui é específico de uma delas.
+| Login | Deve ver |
+|---|---|
+| `dono@franqueado.com.br` | as 9 lojas no dropdown |
+| `diretor1@franqueado.com.br` | apenas lojas 1 a 5 |
+| `diretor2@franqueado.com.br` | apenas lojas 6 a 9 |
+| `agendador1.loja3@franqueado.com.br` | sem dropdown, só "Casa do Celular Loja 3" |
 
-**As rotinas não rodam sozinhas por conta do deploy.** O lembrete da véspera
-e o resumo semanal são scripts, e um deploy não agenda script nenhum — veja
-[Rotinas agendadas](#rotinas-agendadas) abaixo.
+O teste que importa: logado como `diretor2`, tente abrir
+`/dashboard/<id-da-loja-1>`. Deve dar 404 — e não uma tela vazia, que
+confirmaria a existência da loja.
 
-**Confira o deploy em `/api/saude`.** Logo depois de publicar, abra essa
-rota no domínio novo. Ela responde `200` quando está tudo pronto e `503`
-listando o que falta — em duas frentes:
+Para checar direto no SQL Editor, simulando um usuário:
 
-- **Ambiente:** quais variáveis estão ausentes e o que deixa de funcionar
-  sem cada uma.
-- **Banco:** quais migrations ainda não foram aplicadas, pelo número — e
-  quais foram aplicadas **pela metade**.
-
-A segunda distinção existe porque meia migration engana. Migration inteira
-faltando é fácil de entender: não rodou. Mas com a tabela presente e a função
-ausente, quem olha conclui que ela rodou e vai procurar o problema em outro
-lugar. Costuma ser dependência — uma função referencia coluna de uma
-migration anterior que ainda não rodou, o arquivo foi colado, criou a tabela
-e parou no erro.
-
-A segunda existe porque nada liga o código publicado ao schema aplicado: dá
-para subir uma versão que usa `vendas` num banco que não tem `vendas`, e o
-erro só aparece quando alguém abre a tela. Este projeto já viveu isso, com
-parte das migrations aplicada e parte não, sem ninguém saber quais.
-
-A sondagem é indireta — o PostgREST não expõe `information_schema` —, então
-uma função recém-criada pode aparecer como ausente por causa do cache. A
-resposta diz isso e sugere o `notify pgrst` antes de concluir que a
-migration não rodou.
-
-Sendo aberta e consultando o banco, a rota tem dois freios: o resultado da
-sondagem fica em cache por 30 segundos, e há teto de 12 conferências por
-minuto por IP.
-
-O IP vem de `x-nf-client-connection-ip` (ou do equivalente da borda), **não**
-do `x-forwarded-for` cru — esse último é escrito pelo cliente, e trocar o
-valor a cada chamada anularia o teto e ainda criaria uma chave nova no
-contador em memória a cada requisição. Sem eles, uma requisição barata para quem chama viraria dez
-consultas ao Supabase — amplificação clássica.
-
-A rota é aberta e não passa pelo Supabase de propósito — o momento em que
-ela é mais necessária é justamente quando ninguém consegue entrar. Nunca
-devolve o valor de variável nenhuma, só o nome da que falta.
-
-Ela acusa também o erro mais comum do primeiro deploy: `NEXT_PUBLIC_SITE_URL`
-publicada com o valor de desenvolvimento. O e-mail de recuperação chega
-normalmente e o link manda o usuário para a máquina dele — nada falha de
-forma visível.
-
-Depois de publicar, volte ao Supabase e adicione a URL de produção em
-*Authentication → URL Configuration → Redirect URLs*, senão o link de
-recuperação de senha volta para `localhost`.
-
-**Monitoramento:** Sentry já está integrado e fica **inerte sem DSN** — sem
-`NEXT_PUBLIC_SENTRY_DSN` nada é inicializado e nenhuma requisição sai da
-aplicação. Para ligar, preencha as variáveis do `.env.example`.
-
-Inerte, porém, não quer dizer sem custo. O middleware roda em **toda**
-requisição, e o Sentry entra no pacote dele pela instrumentação de borda.
-Medido no build:
-
+```sql
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"<uuid-do-diretor1>"}';
+select count(*) from lojas;   -- deve retornar 5
 ```
-com Sentry na borda   133 kB
-sem Sentry na borda    84 kB
-```
-
-São 49 kB — 37% do middleware — carregados a cada requisição por um serviço
-que, sem DSN, não envia nada. Tentei condicionar o carregamento à presença da
-variável e **não funciona**: o import é dinâmico, mas para a borda o Next
-junta tudo num arquivo só, então a condição em tempo de execução não tira
-nada do pacote.
-
-O único jeito de recuperar os 49 kB é remover a linha
-`await import('./sentry.edge.config')` de `instrumentation.ts` — e o preço é
-perder a captura de erro do middleware, que é justamente a que não dá para
-depurar de outro jeito. A escolha depende de quanto o primeiro carregamento
-importa para você; o número está aqui para ela ser informada.
-
-Dois cuidados na configuração, ambos por causa do CPF de cliente final:
-`sendDefaultPii` está desligado, e um `beforeSend` remove CPF e telefone de
-qualquer texto do evento antes do envio — inclusive de URL em breadcrumb e
-de corpo de server action. Replay só é gravado depois de um erro, nunca a
-sessão inteira, que capturaria dados digitados em tela.
-
-A rota `/monitoring` é o túnel do Sentry e está liberada no middleware. Sem
-isso, o relatório de erro seria redirecionado para o login e nunca chegaria
-— e o erro mais importante de capturar é justamente o de quem não conseguiu
-autenticar.
-
-O middleware cresce de ~86 kB para ~133 kB com o SDK de borda incluído. Está
-bem abaixo do limite da Vercel e da Netlify, mas é custo real em cold start.
-
-Supabase Logs continua sendo o lugar das queries.
-
----
-
-## Rotinas agendadas
-
-O sistema tem três rotinas: o **lembrete da véspera** (uma vez por dia, fim
-da tarde), o **resumo semanal** (segunda de manhã) e a **varredura de
-retenção da LGPD** (dia 1º de cada mês). Elas são scripts Node — e por um bom
-tempo foram *só* scripts: nada as executava, então em produção nunca rodaram.
-Publicar a aplicação não agenda nada.
-
-`.github/workflows/rotinas.yml` agenda as duas.
-
-```
-0 21 * * *   →  18:00 em São Paulo, todo dia      →  lembrete da véspera
-0 11 * * 1   →  08:00 em São Paulo, segunda-feira →  resumo semanal
-0 9 1 * *    →  06:00 em São Paulo, dia 1º        →  retenção (LGPD)
-```
-
-Um cron dispara o workflow **inteiro**, e cada job decide se é com ele. Por
-isso a condição de cada um cita o seu horário: perguntar apenas se veio de um
-agendamento faria o lembrete rodar também na segunda de manhã e no dia 1º.
-
-O cron do GitHub é UTC. O Brasil não tem mais horário de verão desde 2019,
-então São Paulo é UTC−3 o ano inteiro e essas contas não escorregam em março
-ou outubro.
-
-**Ficam desligadas até você ligar.** Sem `NEXT_PUBLIC_SUPABASE_URL` e
-`SUPABASE_SERVICE_ROLE_KEY` em *Settings → Secrets*, os jobs pulam com um
-aviso e nada é enviado. E mesmo com eles, os scripts só enviam de verdade
-quando as credenciais do canal existem (`WHATSAPP_ACCESS_TOKEN` ou
-`RESEND_API_KEY`); sem elas, apenas registram o que fariam.
-
-**Para testar antes**, use *Run workflow* na aba Actions: ele pergunta qual
-rotina e oferece **modo seco**, que lista sem enviar.
-
-**Um cuidado com o segredo.** `SUPABASE_SERVICE_ROLE_KEY` ignora o RLS.
-Guardá-la nos segredos do GitHub significa confiar neles tanto quanto nos da
-Netlify. Quem preferir não duplicar a chave deve disparar as rotinas por
-outro gatilho e deixar este workflow sem segredos — ele pula sozinho, sem
-erro.
-
-**Por que aqui e não numa função da Netlify:** os dois scripts executam ao
-carregar e terminam com `process.exit`. Uma função serverless exigiria
-refatorar código que funciona só para trocar o gatilho.
-
-## Os hooks de `hooks/` não são usados
-
-`useAgendamentos`, `useLojas`, `useMetricas` e `useUsuarios` existem e
-**nenhuma tela os usa**. As páginas buscam no servidor, que é mais simples e
-não expõe a consulta ao cliente.
-
-Estão marcados como tal no topo de cada arquivo, porque código morto que
-parece pronto é uma armadilha: não recebe correção quando o resto muda. Dois
-exemplos concretos deste repositório — o `useMetricas` carregou por semanas
-o efeito do redirect de `/api/*`, corrigido só quando o middleware mudou; e
-o `useAgendamentos` recarregava a lista inteira a cada evento de tempo real,
-sem agrupar, o que com algumas telas abertas transformaria uma rajada de
-inserções em dezenas de consultas.
-
-O segundo foi corrigido. Se a tela de acompanhamento ao vivo não estiver nos
-planos, o mais honesto é apagar os quatro.
 
 ---
 
@@ -1184,6 +1529,25 @@ vazia sem explicação.
 
 **CPF validado com o algoritmo oficial**, no servidor. A máscara só formata;
 `111.111.111-11` passa no regex e é rejeitado no dígito verificador.
+
+---
+
+## Os hooks de `hooks/` não são usados
+
+`useAgendamentos`, `useLojas`, `useMetricas` e `useUsuarios` existem e
+**nenhuma tela os usa**. As páginas buscam no servidor, que é mais simples e
+não expõe a consulta ao cliente.
+
+Estão marcados como tal no topo de cada arquivo, porque código morto que
+parece pronto é uma armadilha: não recebe correção quando o resto muda. Dois
+exemplos concretos deste repositório — o `useMetricas` carregou por semanas
+o efeito do redirect de `/api/*`, corrigido só quando o middleware mudou; e
+o `useAgendamentos` recarregava a lista inteira a cada evento de tempo real,
+sem agrupar, o que com algumas telas abertas transformaria uma rajada de
+inserções em dezenas de consultas.
+
+O segundo foi corrigido. Se a tela de acompanhamento ao vivo não estiver nos
+planos, o mais honesto é apagar os quatro.
 
 ---
 
